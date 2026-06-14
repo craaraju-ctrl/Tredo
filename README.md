@@ -8,6 +8,7 @@ tredo combines a rigorous **Disciplined Core** (professional trading rules enfor
 - **Self-evolving loop** demonstrated: debate + skills + trained memory → paper execution → reflection with regret scoring → meta rule adaptation.
 - **Paper-first** until the full autonomous loop is solid and observable.
 
+[![CI](https://github.com/craaraju-ctrl/Tredo/actions/workflows/ci.yml/badge.svg)](https://github.com/craaraju-ctrl/Tredo/actions/workflows/ci.yml)
 [![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange?logo=rust)](https://www.rust-lang.org)
 [![Tokio](https://img.shields.io/badge/Async-Tokio-red?logo=Tokio)](https://tokio.rs)
 [![Tauri](https://img.shields.io/badge/UI-Tauri-ffc131?logo=tauri)](https://tauri.app)
