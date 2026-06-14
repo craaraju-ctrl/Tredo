@@ -1,5 +1,18 @@
 use chrono::{DateTime, Timelike, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+/// A single skill's vote during a trading decision.
+/// Captured by MarketIntelligenceAgent and consumed by OutcomeProcessor
+/// to record whether the skill's direction matched the actual trade outcome.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillVote {
+    pub skill_name: String,
+    pub direction: crate::agent::SkillDirection,
+    pub weight: f64,
+    pub confidence: f64,
+    pub score: f64,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DisciplineRules {
@@ -17,10 +30,22 @@ pub struct DisciplineRules {
     pub min_confluence_score: f64,
     pub red_folder_discipline: bool,
     pub require_trend_filter: bool,
+    /// Per-skill weights for ensemble aggregation.
+    /// Keyed by skill name (e.g. "SentimentAnalyzer", "VolatilityCalculator").
+    /// Adjusted by MetaControlAgent based on predictive accuracy over time.
+    pub skill_weights: HashMap<String, f64>,
 }
 
 impl Default for DisciplineRules {
     fn default() -> Self {
+        let mut skill_weights = HashMap::new();
+        skill_weights.insert("SentimentAnalyzer".to_string(), 0.30);
+        skill_weights.insert("VolatilityCalculator".to_string(), 0.20);
+        skill_weights.insert("RegimeDetector".to_string(), 0.25);
+        skill_weights.insert("CorrelationChecker".to_string(), 0.10);
+        skill_weights.insert("OnChainData".to_string(), 0.15);
+        skill_weights.insert("TrainedMemorySkill".to_string(), 0.20);
+
         Self {
             use_daily_pivots: true,
             pivot_method: PivotMethod::Classic,
@@ -36,7 +61,28 @@ impl Default for DisciplineRules {
             min_confluence_score: 0.65,
             red_folder_discipline: true,
             require_trend_filter: true,
+            skill_weights,
         }
+    }
+}
+
+impl DisciplineRules {
+    /// Get the ensemble weight for a skill. Returns the configured weight,
+    /// or the default of 0.20 if the skill is not yet tracked.
+    pub fn get_skill_weight(&self, name: &str) -> f64 {
+        self.skill_weights.get(name).copied().unwrap_or(0.20)
+    }
+
+    /// Update a skill weight, clamped to [0.0, 1.0].
+    pub fn set_skill_weight(&mut self, name: &str, weight: f64) {
+        let clamped = weight.clamp(0.0, 1.0);
+        self.skill_weights.insert(name.to_string(), clamped);
+    }
+
+    /// Adjust a skill weight by a delta, clamped to [0.0, 1.0].
+    pub fn adjust_skill_weight(&mut self, name: &str, delta: f64) {
+        let current = self.get_skill_weight(name);
+        self.set_skill_weight(name, current + delta);
     }
 }
 

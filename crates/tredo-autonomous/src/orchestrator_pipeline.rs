@@ -6,25 +6,23 @@ use tredo_core::TradeDirection;
 // The pipeline now routes through Tredo groups (see tredo.rs) instead.
 #[allow(dead_code)]
 impl crate::orchestrator_struct::AutonomousOrchestrator {
-    /// Phase 5: LLM-driven strategy decision.
-    /// Returns Option<TradeSignal> — None means LLM decided HOLD.
+    /// Phase 5: **Agentic** strategy decision (no pre-supplied price points).
+    /// The agent autonomously identifies entry, SL, TP, direction using its full stack (indicators, debate, memory, rules).
+    /// This is what makes it agentic AI rather than a scripted bot.
     pub async fn phase5_strategy_decision(
         &self,
         symbol: &str,
-        direction: TradeDirection,
-        entry: f64,
-        stop: f64,
-        target: f64,
+        current_price: f64,
     ) -> Result<Option<TradeSignal>, Box<dyn Error + Send + Sync>> {
-        println!("\n[PHASE 5] LLM Strategy Decision");
+        println!("\n[PHASE 5] Agentic (autonomous) Strategy Decision");
         let signal_opt = self
             .strategy
-            .generate_signal(symbol, direction, entry, stop, target)
+            .generate_signal(symbol, current_price)
             .await?;
 
         match &signal_opt {
             Some(sig) => println!(
-                "[PHASE 5] LLM decided {} {} @ {:.2} (confidence {:.1}%)",
+                "[PHASE 5] AGENT decided {} {} @ entry={:.2} SL={:.2} TP={:.2} (confidence {:.1}%)",
                 if sig.direction == tredo_core::TradeDirection::Long {
                     "BUY"
                 } else {
@@ -32,10 +30,12 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
                 },
                 symbol,
                 sig.entry_price,
+                sig.stop_loss,
+                sig.take_profit,
                 sig.confidence_score * 100.0
             ),
             None => println!(
-                "[PHASE 5] LLM decided HOLD for {} — skipping execution.",
+                "[PHASE 5] AGENT decided HOLD for {} — skipping execution.",
                 symbol
             ),
         }
@@ -56,17 +56,36 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
 
     /// Full autonomous pipeline: routes through Tredo groups (Identifier → Verifier → Executer).
     /// Pushes real chain-of-thought entries into SharedState.cot_store.
+    /// Fully agentic pipeline (no external price points or direction).
+    /// The agent observes latest market data from state (populated by the data feed / scanner).
+    /// It uses its skills (patterns, volume, RSI, MACD, ATR, pivots, regime, confluence, memory recall)
+    /// + debate + DisciplinedCore rules to decide *if*, *direction*, and the precise levels.
+    /// This is the definition of agentic AI trading vs a bot that is told the levels.
     pub async fn run_full_pipeline(
         &self,
         symbol: &str,
-        direction: TradeDirection,
-        entry: f64,
-        stop: f64,
-        target: f64,
     ) -> Result<PipelineSummary, Box<dyn Error + Send + Sync>> {
         let start = std::time::Instant::now();
-        println!("\n=== tredo AUTONOMOUS PIPELINE for {} ===", symbol);
+        println!("\n=== tredo AUTONOMOUS (AGENTIC) PIPELINE for {} ===", symbol);
         let tredo = self.tredo();
+
+        // Agent perceives the current market price from its state (real-time data feed populates ohlcv_history)
+        let observed_price = {
+            let history = self.state.ohlcv_history.read().await;
+            history.get(symbol)
+                .and_then(|bars| bars.last().map(|b| b.close))
+                .unwrap_or(0.0)
+        };
+
+        if observed_price <= 0.0 {
+            return Ok(PipelineSummary {
+                executed: false,
+                phase_results: vec![],
+                total_duration_ms: start.elapsed().as_millis() as u64,
+                final_signal: None,
+                reason: format!("No observable market data for {}", symbol),
+            });
+        }
 
         // Start a COT chain for this pipeline run
         let chain_id = self
@@ -74,17 +93,11 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
             .start_cot_chain(
                 "Orchestrator",
                 &format!(
-                    "Running full pipeline for {} {} @ {:.2}",
-                    symbol,
-                    if direction == TradeDirection::Long {
-                        "BUY"
-                    } else {
-                        "SELL"
-                    },
-                    entry
+                    "Running full agentic pipeline for {} (observed market price {:.2})",
+                    symbol, observed_price
                 ),
                 "PIPELINE_START",
-                &format!("Starting autonomous pipeline for {}", symbol),
+                &format!("Starting fully autonomous agentic pipeline for {}", symbol),
                 1.0,
             )
             .await;
@@ -129,9 +142,18 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
             )
             .await;
 
+        // Get latest observed price from state (agent perceives the market itself)
+        let latest_price = {
+            let history = self.state.ohlcv_history.read().await;
+            history.get(symbol)
+                .and_then(|bars| bars.last().map(|b| b.close))
+                .unwrap_or(0.0)  // fallback only for bootstrap; will be caught by the <=0 check above
+        };
+
         // ── IDENTIFIER GROUP ─────────────────────────────────────────────────
-        // Runs market analysis + session timer + red folder checks
-        let (discipline_ok, confluence, pivots) = tredo.run_identifier(symbol, entry).await?;
+        // Runs market analysis + session timer + red folder checks.
+        // Agent observes latest data and computes its own indicators (trend, patterns, volume, RSI, MACD etc. via skills).
+        let (discipline_ok, confluence, pivots) = tredo.run_identifier(symbol, observed_price).await?;
 
         if !discipline_ok {
             self.state
@@ -169,14 +191,15 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
             .add_cot_step(
                 chain_id,
                 "Identifier",
-                &format!("Market analysis for {} @ {:.2}", symbol, entry),
+                &format!("Market analysis for {} @ {:.2} (agent observed)", symbol, observed_price),
                 "ANALYZED",
                 &format!(
-                    "Confluence: {:.1}%, Pivot: {:.2}, R1: {:.2}, S1: {:.2}, Discipline: OK",
+                    "Confluence: {:.1}%, Pivot: {:.2}, R1: {:.2}, S1: {:.2}, Discipline: OK (agent observed price {:.2})",
                     confluence * 100.0,
                     pivots.pivot,
                     pivots.r1,
-                    pivots.s1
+                    pivots.s1,
+                    observed_price
                 ),
                 confluence,
                 Some(symbol.to_string()),
@@ -184,19 +207,20 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
             .await;
 
         // ── VERIFIER GROUP ───────────────────────────────────────────────────
-        // Runs drawdown + overtrading checks + risk psychology + reflection
+        // Runs drawdown + overtrading checks + risk psychology + reflection.
+        // Agent uses its own computed market state (no external levels).
         let equity = {
             let portfolio = self.state.portfolio.read().await;
             portfolio.total_equity
         };
-        let risk = tredo.run_verifier(symbol, entry, equity).await?;
+        let risk = tredo.run_verifier(symbol, observed_price, equity).await?;
         let risk_passed = risk.recommendation != crate::types::RiskRecommendation::Halt;
 
         self.state
             .add_cot_step(
                 chain_id,
                 "Verifier",
-                &format!("Risk assessment for {}", symbol),
+                &format!("Risk assessment for {} (observed price {:.2})", symbol, observed_price),
                 if risk_passed { "PASS" } else { "HALT" },
                 &format!(
                     "Heat: {:.1}%, DD: {:.1}%, Recommendation: {:?}",
@@ -231,9 +255,11 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
         }
 
         // ── EXECUTER GROUP ───────────────────────────────────────────────────
-        // Runs LLM strategy decision + execution + outcome logging
+        // The agent (StrategyDecision) now decides *everything* autonomously:
+        // direction + exact entry/SL/TP based on its analysis of indicators it computed (RSI, MACD, volume, patterns, pivots, ATR, regime, memory).
+        // We only pass the symbol and the price it observed in the market.
         let signal_opt = tredo
-            .run_executer(symbol, direction, entry, stop, target)
+            .run_executer(symbol, observed_price)
             .await?;
 
         match &signal_opt {
@@ -242,7 +268,7 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
                     .add_cot_step(
                         chain_id,
                         "Executer",
-                        &format!("LLM decision for {} @ {:.2}", symbol, entry),
+                        &format!("AGENTIC decision for {} (observed price {:.2})", symbol, observed_price),
                         if sig.direction == TradeDirection::Long {
                             "BUY"
                         } else {
@@ -265,7 +291,7 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
                     .add_cot_step(
                         chain_id,
                         "Executer",
-                        &format!("LLM decision for {} @ {:.2}", symbol, entry),
+                        &format!("AGENTIC decision for {} (observed price {:.2})", symbol, observed_price),
                         "HOLD",
                         "LLM decided HOLD — no trade placed",
                         0.0,
@@ -285,15 +311,15 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
         let total_ms = start.elapsed().as_millis() as u64;
         let final_action = if executed { "TRADE_EXECUTED" } else { "HOLD" };
         let final_reason = if executed {
+            // The signal contains the levels the *agent* decided
+            let sig = signal_opt.as_ref().unwrap();
             format!(
-                "✅ Pipeline complete: {} {} @ {:.2} in {}ms",
+                "✅ Pipeline complete: {} {} @ entry {:.2} (agent decided SL {:.2} TP {:.2}) in {}ms",
                 symbol,
-                if direction == TradeDirection::Long {
-                    "BUY"
-                } else {
-                    "SELL"
-                },
-                entry,
+                if sig.direction == TradeDirection::Long { "BUY" } else { "SELL" },
+                sig.entry_price,
+                sig.stop_loss,
+                sig.take_profit,
                 total_ms
             )
         } else {

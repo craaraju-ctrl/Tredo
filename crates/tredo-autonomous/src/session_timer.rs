@@ -40,8 +40,7 @@ impl SessionTimerAgent {
             );
         }
 
-        if let Some(mins_to_close) = session.time_to_close {
-            let mins = mins_to_close.num_minutes();
+        if let Some(mins) = session.time_to_close {
             if mins < 15 {
                 return (
                     false,

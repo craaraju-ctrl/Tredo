@@ -651,7 +651,9 @@ async fn trigger_orchestra_cycle(state: State<'_, Mutex<AppState>>) -> Result<St
         let stop = 24200.0;
         let target = 25000.0;
 
-        match orch.run_full_pipeline(sym, dir, entry, stop, target).await {
+        // Agentic call — only the symbol. The Tredo agent decides direction and its own levels
+        // from market data + full analysis (indicators, debate, memory, rules).
+        match orch.run_full_pipeline(&sym).await {
             Ok(summary) => {
                 let action = summary
                     .final_signal

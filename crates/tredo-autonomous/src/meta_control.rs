@@ -4,6 +4,9 @@ use chrono::{Duration, Utc};
 use std::error::Error;
 use tredo_core::{Agent, AgentInput, AgentOutput, AgentTier, DisciplineRules};
 
+/// Minimum accuracy threshold before MetaControl adjusts skill weights.
+const SKILL_ACCURACY_MIN_SAMPLES: usize = 5;
+
 /// MetaControlAgent — the learning layer.
 /// Runs on the slow loop (daily/weekly) to:
 /// 1. Review recent episodes with high regret scores
@@ -19,10 +22,89 @@ impl MetaControlAgent {
         Self { state }
     }
 
+    /// Analyze per-skill prediction accuracy and adjust weights accordingly.
+    /// Skills that predicted correctly more often get a weight boost;
+    /// skills that were misleading get penalized.
+    pub async fn tune_skill_weights(
+        &self,
+        days_back: i64,
+    ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
+        let since = Utc::now() - Duration::days(days_back);
+        let stats = self
+            .state
+            .episode_store
+            .skill_accuracy_stats(&since)
+            .unwrap_or_default();
+
+        if stats.is_empty() {
+            println!("[MetaControl] ℹ No skill performance data to analyze.");
+            return Ok(vec![]);
+        }
+
+        let mut changes: Vec<String> = Vec::new();
+        let mut rules = self.state.rules.write().await;
+
+        for stat in &stats {
+            if stat.total_votes < SKILL_ACCURACY_MIN_SAMPLES {
+                continue; // not enough data
+            }
+
+            let old_weight = rules.get_skill_weight(&stat.skill_name);
+
+            // Accuracy vs expected baseline (random guessing = 0.33 for 3 directions)
+            let baseline = 0.40_f64;
+            let delta = if stat.accuracy > baseline + 0.10 {
+                // Highly predictive: boost weight by 20%
+                old_weight * 0.20
+            } else if stat.accuracy > baseline {
+                // Somewhat predictive: small boost
+                old_weight * 0.08
+            } else if stat.accuracy < baseline - 0.10 {
+                // Misleading: penalize by 15%
+                -(old_weight * 0.15)
+            } else {
+                // Near baseline: small penalty
+                -(old_weight * 0.05)
+            };
+
+            if delta.abs() < 0.005 {
+                continue; // negligible change
+            }
+
+            let new_weight = (old_weight + delta).clamp(0.02, 0.50);
+            rules.set_skill_weight(&stat.skill_name, new_weight);
+
+            let direction = if delta > 0.0 { "boosted" } else { "reduced" };
+            let msg = format!(
+                "Skill '{}' weight {} from {:.3} → {:.3} (accuracy: {:.0}%, {} votes)",
+                stat.skill_name,
+                direction,
+                old_weight,
+                new_weight,
+                stat.accuracy * 100.0,
+                stat.total_votes
+            );
+            println!("[MetaControl] ⚙️ {}", msg);
+            changes.push(msg);
+        }
+
+        drop(rules);
+
+        if !changes.is_empty() {
+            // Persist updated rules to redb
+            if let Ok(json) = serde_json::to_string(&*self.state.rules.read().await) {
+                let _ = self.state.memory.store_state("rules/current", &json);
+            }
+        }
+
+        Ok(changes)
+    }
+
     /// Run a full weekly review cycle.
-    /// 1. Load high-regret events from SQLite (since `days_back` days ago)
-    /// 2. Ask Ollama to find patterns and propose rule changes
-    /// 3. Apply approved changes and log them to SQLite
+    /// 1. Tune skill weights based on predictive accuracy
+    /// 2. Load high-regret events from SQLite (since `days_back` days ago)
+    /// 3. Ask Ollama to find patterns and propose rule changes
+    /// 4. Apply approved changes and log them to SQLite
     pub async fn weekly_review(
         &self,
         days_back: i64,
@@ -31,6 +113,10 @@ impl MetaControlAgent {
             "\n[MetaControl] 📊 Starting weekly review (last {} days)...",
             days_back
         );
+
+        // Phase 0: Tune skill weights based on predictive accuracy
+        // (unwrap_or_default so a tuning failure doesn't block the rest of the review)
+        let _ = self.tune_skill_weights(days_back).await.unwrap_or_default();
 
         let since = Utc::now() - Duration::days(days_back);
 

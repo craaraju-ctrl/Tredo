@@ -87,6 +87,23 @@ pub struct RuleChangeSnapshot {
     pub applied_at: String,
 }
 
+// ── Skill Performance (for MetaControl weight tuning) ───────────────────
+
+/// Records which direction a skill predicted and whether it was correct.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillPerformanceRow {
+    pub id: i64,
+    pub episode_id: String,
+    pub skill_name: String,
+    pub direction: String, // "Bullish" | "Bearish" | "Neutral"
+    pub weight_used: f64,
+    pub confidence: f64,
+    pub score: f64,
+    /// Whether the skill's direction matched the actual trade direction.
+    pub was_correct: bool,
+    pub recorded_at: String,
+}
+
 // ── EpisodeStore ───────────────────────────────────────────────────────────
 
 /// Thread-safe SQLite wrapper for persistent trade history.
@@ -97,6 +114,18 @@ pub struct RuleChangeSnapshot {
 #[derive(Clone)]
 pub struct EpisodeStore {
     conn: Arc<Mutex<Connection>>,
+}
+
+// ── Skill Accuracy Summary ────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillAccuracySummary {
+    pub skill_name: String,
+    pub total_votes: usize,
+    pub correct_votes: usize,
+    pub accuracy: f64,
+    pub avg_confidence: f64,
+    pub avg_weight: f64,
 }
 
 impl EpisodeStore {
@@ -191,6 +220,21 @@ impl EpisodeStore {
                             reason     TEXT NOT NULL,
                             applied_at TEXT NOT NULL
                         );
+
+                        CREATE TABLE IF NOT EXISTS skill_performance (
+                            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                            episode_id   TEXT NOT NULL,
+                            skill_name   TEXT NOT NULL,
+                            direction    TEXT NOT NULL,
+                            weight_used  REAL NOT NULL,
+                            confidence   REAL NOT NULL,
+                            score        REAL NOT NULL,
+                            was_correct  INTEGER NOT NULL,
+                            recorded_at  TEXT NOT NULL
+                        );
+
+                        CREATE INDEX IF NOT EXISTS idx_sp_skill ON skill_performance(skill_name);
+                        CREATE INDEX IF NOT EXISTS idx_sp_episode ON skill_performance(episode_id);
                     ",
                     )?;
 
@@ -473,6 +517,111 @@ impl EpisodeStore {
                 new_value: row.get(2)?,
                 reason: row.get(3)?,
                 applied_at: row.get(4)?,
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    // ── Skill Performance Operations ───────────────────────────────────
+
+    /// Record a single skill vote and whether it was correct vs the trade outcome.
+    pub fn insert_skill_performance(&self, sp: &SkillPerformanceRow) -> Result<(), rusqlite::Error> {
+        let conn = self
+            .conn
+            .lock()
+            .expect("SQLite connection lock poisoned - this indicates a previous panic in DB code");
+        conn.execute(
+            "INSERT INTO skill_performance (episode_id, skill_name, direction, weight_used, confidence, score, was_correct, recorded_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                sp.episode_id,
+                sp.skill_name,
+                sp.direction,
+                sp.weight_used,
+                sp.confidence,
+                sp.score,
+                sp.was_correct as i64,
+                sp.recorded_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Load skill performance records since a timestamp, for MetaControl analysis.
+    pub fn load_skill_performance_since(
+        &self,
+        since: &DateTime<Utc>,
+    ) -> Result<Vec<SkillPerformanceRow>, rusqlite::Error> {
+        let since_str = since.to_rfc3339();
+        let conn = self
+            .conn
+            .lock()
+            .expect("SQLite connection lock poisoned - this indicates a previous panic in DB code");
+        let mut stmt = conn.prepare(
+            "SELECT id, episode_id, skill_name, direction, weight_used, confidence, score, was_correct, recorded_at
+             FROM skill_performance
+             WHERE recorded_at >= ?1
+             ORDER BY recorded_at DESC",
+        )?;
+        let rows = stmt.query_map(params![since_str], |row| {
+            Ok(SkillPerformanceRow {
+                id: row.get(0)?,
+                episode_id: row.get(1)?,
+                skill_name: row.get(2)?,
+                direction: row.get(3)?,
+                weight_used: row.get(4)?,
+                confidence: row.get(5)?,
+                score: row.get(6)?,
+                was_correct: row.get::<_, i64>(7)? != 0,
+                recorded_at: row.get(8)?,
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    /// Get per-skill accuracy statistics since a timestamp.
+    pub fn skill_accuracy_stats(
+        &self,
+        since: &DateTime<Utc>,
+    ) -> Result<Vec<SkillAccuracySummary>, rusqlite::Error> {
+        let since_str = since.to_rfc3339();
+        let conn = self
+            .conn
+            .lock()
+            .expect("SQLite connection lock poisoned - this indicates a previous panic in DB code");
+        let mut stmt = conn.prepare(
+            "SELECT skill_name,
+                    COUNT(*) as total,
+                    SUM(was_correct) as correct_count,
+                    AVG(confidence) as avg_confidence,
+                    AVG(weight_used) as avg_weight
+             FROM skill_performance
+             WHERE recorded_at >= ?1
+             GROUP BY skill_name
+             ORDER BY correct_count * 1.0 / COUNT(*) DESC",
+        )?;
+        let rows = stmt.query_map(params![since_str], |row| {
+            let total: i64 = row.get(1)?;
+            let correct: i64 = row.get(2)?;
+            Ok(SkillAccuracySummary {
+                skill_name: row.get(0)?,
+                total_votes: total as usize,
+                correct_votes: correct as usize,
+                accuracy: if total > 0 {
+                    correct as f64 / total as f64
+                } else {
+                    0.0
+                },
+                avg_confidence: row.get(3)?,
+                avg_weight: row.get(4)?,
             })
         })?;
         let mut results = Vec::new();

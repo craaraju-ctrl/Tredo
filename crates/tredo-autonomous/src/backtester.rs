@@ -36,7 +36,7 @@ impl AutonomousBacktester {
 
             let summary = self
                 .orchestrator
-                .run_full_pipeline(symbol, direction, adjusted_entry, sl, tp)
+                .run_full_pipeline(symbol)  // agentic: agent decides levels itself
                 .await?;
             summaries.push(summary.clone());
 

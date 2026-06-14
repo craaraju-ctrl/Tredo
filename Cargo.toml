@@ -19,3 +19,10 @@ authors = ["craaraju-ctrl"]
 repository = "https://github.com/craaraju-ctrl/Tredo"
 homepage = "https://github.com/craaraju-ctrl/Tredo"
 readme = "README.md"
+
+# TODO: Remove this pin when lancedb is upgraded to a version using arrow >=52.
+# chrono 0.4.40+ added Datelike::quarter() which conflicts with arrow-arith 51.x's
+# ChronoDateExt::quarter() when the lancedb feature is enabled.
+# Pin to <0.4.40 to keep --features lancedb buildable.
+[workspace.dependencies]
+chrono = { version = ">=0.4.35, <0.4.40", features = ["serde"] }

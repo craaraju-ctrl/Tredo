@@ -309,23 +309,12 @@ impl SelfEvolutionValidator {
                     }
                 };
 
-                let sl_pct = 0.012;
-                let tp_pct = 0.030;
-                let stop = if direction == tredo_core::TradeDirection::Long {
-                    price * (1.0 - sl_pct)
-                } else {
-                    price * (1.0 + sl_pct)
-                };
-                let target = if direction == tredo_core::TradeDirection::Long {
-                    price * (1.0 + tp_pct)
-                } else {
-                    price * (1.0 - tp_pct)
-                };
+                // (levels are no longer computed here — the agent decides them autonomously inside run_full_pipeline)
 
                 // Run the full pipeline
                 let pipeline_result = match self
                     .orchestrator
-                    .run_full_pipeline(symbol, direction, price, stop, target)
+                    .run_full_pipeline(symbol)  // agentic: agent decides levels from its own analysis
                     .await
                 {
                     Ok(p) => p,

@@ -3,6 +3,247 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// ── LanceDB backend (feature-gated) ─────────────────────────────────────────
+#[cfg(feature = "lancedb")]
+mod lance_backend {
+    use super::*;
+    use arrow_array::{Array, Float32Array, Float64Array, RecordBatch, RecordBatchIterator, StringArray};
+    use arrow_schema::{DataType, Field, Schema};
+    use chrono::{DateTime, Utc};
+    use futures::TryStreamExt;
+    use lancedb::connect;
+    use lancedb::query::QueryBase;
+    use lancedb::query::ExecutableQuery;
+    use std::sync::Arc;
+
+    /// The LanceDbBackend wraps the table, created lazily on first store.
+    pub struct LanceDbBackend {
+        table: lancedb::Table,
+    }
+
+    /// The LanceDbBackend holds the connection and the table ready for operations.
+    impl LanceDbBackend {
+        /// Attempt to open the existing table or create a new empty one.
+        /// `db_path` is treated as a directory (LanceDB stores a dataset).
+        pub async fn open_or_create(
+            db_path: &str,
+            dim: usize,
+        ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+            let conn = connect(db_path).execute().await?;
+
+            // Try opening an existing table first, otherwise create empty
+            let table = match conn.open_table("episodes").execute().await {
+                Ok(tbl) => {
+                    println!("[VectorMemory] 🔍 Reopened existing LanceDB table 'episodes'");
+                    tbl
+                }
+                Err(_) => {
+                    let schema = Arc::new(Schema::new(vec![
+                        Field::new("episode_id", DataType::Utf8, false),
+                        Field::new("symbol", DataType::Utf8, false),
+                        Field::new("timestamp", DataType::Utf8, false),
+                        Field::new("summary_text", DataType::Utf8, false),
+                        Field::new("regret_score", DataType::Float64, true),
+                        Field::new(
+                            "embedding",
+                            DataType::FixedSizeList(
+                                Arc::new(Field::new("item", DataType::Float32, false)),
+                                dim as i32,
+                            ),
+                            false,
+                        ),
+                    ]));
+                    let tbl = conn
+                        .create_empty_table("episodes", schema)
+                        .execute()
+                        .await?;
+                    println!(
+                        "[VectorMemory] ✅ Created new LanceDB table 'episodes' (dim={})",
+                        dim
+                    );
+                    tbl
+                }
+            };
+
+            Ok(Self { table })
+        }
+
+        /// Store a single vector entry as a RecordBatch.
+        pub async fn store(
+            &mut self,
+            entry: &VectorEntry,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            let dim = entry.embedding.len() as i32;
+
+            let episode_ids = StringArray::from(vec![entry.episode_id.as_str()]);
+            let symbols = StringArray::from(vec![entry.symbol.as_str()]);
+            let timestamps = StringArray::from(vec![entry.timestamp.to_rfc3339().as_str()]);
+            let summaries = StringArray::from(vec![entry.summary_text.as_str()]);
+
+            let regret_values: Vec<f64> = match entry.regret_score {
+                Some(v) => vec![v],
+                None => vec![f64::NAN],
+            };
+            let regrets = Float64Array::from(regret_values);
+
+            let embedding_values = Float32Array::from(entry.embedding.clone());
+            let embedding_array = Arc::new(
+                arrow_array::FixedSizeListArray::new(
+                    Arc::new(Field::new("item", DataType::Float32, false)),
+                    dim,
+                    Arc::new(embedding_values),
+                    None,
+                )
+            );
+
+            let table_schema = self.table.schema().await?;
+            let batch = RecordBatch::try_new(
+                table_schema.clone(),
+                vec![
+                    Arc::new(episode_ids),
+                    Arc::new(symbols),
+                    Arc::new(timestamps),
+                    Arc::new(summaries),
+                    Arc::new(regrets),
+                    embedding_array,
+                ],
+            )?;
+
+            // Wrap the batch in a RecordBatchIterator (which implements RecordBatchReader)
+            // so it satisfies lancedb's IntoArrow trait bound.
+            let reader = RecordBatchIterator::new(vec![batch].into_iter().map(Ok), table_schema);
+            self.table.add(reader).execute().await?;
+            Ok(())
+        }
+
+        /// Search for similar vectors with optional metadata filtering.
+        pub async fn search(
+            &self,
+            query_embedding: &[f32],
+            top_k: usize,
+            symbol_filter: Option<&str>,
+            max_regret: Option<f64>,
+        ) -> Result<Vec<SimilarResult>, Box<dyn std::error::Error + Send + Sync>> {
+            let mut filter = String::new();
+            if let Some(sym) = symbol_filter {
+                filter.push_str(&format!("symbol = '{}'", sym));
+            }
+            if let Some(reg) = max_regret {
+                if !filter.is_empty() {
+                    filter.push_str(" AND ");
+                }
+                filter.push_str(&format!("regret_score <= {}", reg));
+            }
+
+            let mut q = self
+                .table
+                .query()
+                .nearest_to(query_embedding)?
+                .limit(top_k);
+
+            if !filter.is_empty() {
+                q = q.only_if(&filter);
+            }
+
+            let stream = q.execute().await?;
+            let batches: Vec<RecordBatch> = stream.try_collect().await?;
+
+            let mut results = Vec::new();
+            for batch in &batches {
+                let episode_ids = batch
+                    .column_by_name("episode_id")
+                    .ok_or("missing episode_id column")?
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .ok_or("episode_id not StringArray")?;
+
+                let symbols = batch
+                    .column_by_name("symbol")
+                    .ok_or("missing symbol column")?
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .ok_or("symbol not StringArray")?;
+
+                let timestamps = batch
+                    .column_by_name("timestamp")
+                    .ok_or("missing timestamp column")?
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .ok_or("timestamp not StringArray")?;
+
+                let summaries = batch
+                    .column_by_name("summary_text")
+                    .ok_or("missing summary_text column")?
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .ok_or("summary_text not StringArray")?;
+
+                let regret_scores = batch
+                    .column_by_name("regret_score")
+                    .ok_or("missing regret_score column")?
+                    .as_any()
+                    .downcast_ref::<Float64Array>()
+                    .ok_or("regret_score not Float64Array")?;
+
+                // LanceDB adds a distance column with the similarity score
+                // (column name is `_distance` in recent LanceDB versions;
+                // fall back to `distance` for compatibility).
+                let dist_col = batch
+                    .column_by_name("_distance")
+                    .or_else(|| batch.column_by_name("distance"))
+                    .ok_or("missing distance column (tried _distance, distance)")?;
+                let distances = dist_col
+                    .as_any()
+                    .downcast_ref::<Float64Array>()
+                    .ok_or("distance column not Float64Array")?;
+
+                for i in 0..batch.num_rows() {
+                    let ts_str = timestamps.value(i);
+                    let ts: DateTime<Utc> = match ts_str.parse() {
+                        Ok(t) => t,
+                        Err(_) => {
+                            eprintln!("[VectorMemory] ⚠️ Failed to parse timestamp: {}", ts_str);
+                            continue;
+                        }
+                    };
+
+                    let regret: Option<f64> = if regret_scores.is_null(i) {
+                        None
+                    } else {
+                        let v = regret_scores.value(i);
+                        if v.is_nan() { None } else { Some(v) }
+                    };
+
+                    // LanceDB returns distance (lower = closer). The default metric is L2.
+                    // Convert to similarity: similarity = 1.0 / (1.0 + distance)
+                    // Note: this formula assumes L2 distance. If cosine distance was configured
+                    // (_distance = 1.0 - cos_sim), adjust to: similarity = 1.0 - dist.
+                    let dist = distances.value(i);
+                    let similarity = 1.0 / (1.0 + dist);
+
+                    results.push(SimilarResult {
+                        episode_id: episode_ids.value(i).to_string(),
+                        symbol: symbols.value(i).to_string(),
+                        timestamp: ts,
+                        similarity,
+                        summary_text: summaries.value(i).to_string(),
+                        regret_score: regret,
+                    });
+                }
+            }
+
+            Ok(results)
+        }
+
+
+    }
+}
+
+#[cfg(feature = "lancedb")]
+use lance_backend::LanceDbBackend;
+
+// ── Data Types (unchanged) ──────────────────────────────────────────────────
+
 /// A stored vector entry with metadata for similarity search.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VectorEntry {
@@ -10,8 +251,8 @@ pub struct VectorEntry {
     pub symbol: String,
     pub timestamp: DateTime<Utc>,
     pub embedding: Vec<f32>,
-    pub summary_text: String, // The text that was embedded (for display)
-    pub regret_score: Option<f64>, // Post-trade regret, if available
+    pub summary_text: String,
+    pub regret_score: Option<f64>,
 }
 
 /// Result of a similarity search.
@@ -20,91 +261,38 @@ pub struct SimilarResult {
     pub episode_id: String,
     pub symbol: String,
     pub timestamp: DateTime<Utc>,
-    pub similarity: f64, // Cosine similarity (0.0 to 1.0)
+    pub similarity: f64,
     pub summary_text: String,
     pub regret_score: Option<f64>,
 }
 
-/// Production-ready VectorMemory (JSON fallback; LanceDB optional via `features = ["lancedb"]` for full scale).
-/// API is "Lance-ready". Current brute-force + JSON is sufficient and production-viable for the intact system.
-/// Upgrade enables proper vector DB indexing/filtering (by regret, regime, symbol) for large-scale trained memory recall in debate/reflector/historian/etc.
-pub struct VectorMemory {
+// ── JSON Fallback Backend (always available) ──────────────────────────────
+
+struct JsonBackend {
     entries: HashMap<String, VectorEntry>,
     db_path: String,
 }
 
-impl VectorMemory {
-    pub fn new(db_path: &str) -> Self {
-        let mut mem = Self {
+impl JsonBackend {
+    fn new(db_path: &str) -> Self {
+        let mut b = Self {
             entries: HashMap::new(),
             db_path: db_path.to_string(),
         };
-        let _ = mem.load_from_disk();
-        mem
+        let _ = b.load_from_disk();
+        b
     }
 
-    pub async fn store(
-        &mut self,
-        episode_id: &str,
-        symbol: &str,
-        summary_text: &str,
-        regret_score: Option<f64>,
-        llm: &LlmExecutor,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let embedding = llm.embed_text(summary_text).await?;
-
-        let entry = VectorEntry {
-            episode_id: episode_id.to_string(),
-            symbol: symbol.to_string(),
-            timestamp: Utc::now(),
-            embedding,
-            summary_text: summary_text.to_string(),
-            regret_score,
-        };
-
-        self.entries.insert(episode_id.to_string(), entry);
+    fn store(&mut self, entry: VectorEntry) {
+        self.entries.insert(entry.episode_id.clone(), entry);
         let _ = self.save_to_disk();
-        Ok(())
     }
 
-    pub async fn search(
-        &self,
-        query_text: &str,
-        top_k: usize,
-        llm: &LlmExecutor,
-    ) -> Result<Vec<SimilarResult>, Box<dyn std::error::Error + Send + Sync>> {
+    fn search(&self, query_embedding: &[f32], top_k: usize) -> Vec<SimilarResult> {
         if self.entries.is_empty() {
-            return Ok(vec![]);
+            return vec![];
         }
 
-        let query_embedding = llm.embed_text(query_text).await?;
-
-        let mut scored: Vec<(&VectorEntry, f64)> = self
-            .entries
-            .values()
-            .map(|entry| {
-                let sim = cosine_similarity(&query_embedding, &entry.embedding);
-                (entry, sim)
-            })
-            .collect();
-
-        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-        Ok(scored
-            .into_iter()
-            .take(top_k)
-            .map(|(entry, sim)| SimilarResult {
-                episode_id: entry.episode_id.clone(),
-                symbol: entry.symbol.clone(),
-                timestamp: entry.timestamp,
-                similarity: sim,
-                summary_text: entry.summary_text.clone(),
-                regret_score: entry.regret_score,
-            })
-            .collect())
-    }
-
-    pub fn search_by_vector(&self, query_embedding: &[f32], top_k: usize) -> Vec<SimilarResult> {
         let mut scored: Vec<(&VectorEntry, f64)> = self
             .entries
             .values()
@@ -130,11 +318,11 @@ impl VectorMemory {
             .collect()
     }
 
-    pub fn len(&self) -> usize {
+    fn len(&self) -> usize {
         self.entries.len()
     }
 
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
@@ -150,13 +338,183 @@ impl VectorMemory {
             let entries: HashMap<String, VectorEntry> = serde_json::from_str(&json)?;
             self.entries = entries;
             println!(
-                "[VectorMemory] ✅ Loaded {} entries from disk",
+                "[VectorMemory] ✅ Loaded {} entries from JSON disk",
                 self.entries.len()
             );
         }
         Ok(())
     }
+
+    /// Derive a LanceDB directory path from the JSON db_path.
+    /// e.g. "tredo_vectors.json" => "tredo_vectors.lance"
+    #[cfg(feature = "lancedb")]
+    fn lance_db_path(&self) -> String {
+        let p = std::path::Path::new(&self.db_path);
+        match p.extension() {
+            Some(ext) if ext == "json" => {
+                let stem = p.file_stem().unwrap_or_default().to_string_lossy();
+                format!("{}.lance", stem)
+            }
+            _ => format!("{}.lance", self.db_path),
+        }
+    }
 }
+
+// ── Public VectorMemory (identical API, LanceDB-ready) ──────────────────────
+
+/// Production-ready VectorMemory with optional LanceDB backend.
+///
+/// - **Default** (no features): JSON file + brute-force cosine similarity.
+/// - **With `lancedb` feature**: `cargo build -p tredo-core --features lancedb`
+///   Enables LanceDB embedded vector DB with ANN indexing and metadata filtering.
+///
+/// LanceDB is initialized lazily on the first `store()` call (to keep the
+/// constructor synchronous). If LanceDB init fails, it falls back to JSON.
+pub struct VectorMemory {
+    #[cfg(feature = "lancedb")]
+    lancedb: Option<LanceDbBackend>,
+    json: JsonBackend,
+}
+
+impl VectorMemory {
+    /// Create a new VectorMemory. Always synchronous.
+    ///
+    /// - `db_path`: Path to the JSON file (e.g. `"tredo_vectors.json"`).
+    ///   When the `lancedb` feature is enabled, LanceDB will create a sibling
+    ///   directory at `{stem}.lance` (e.g. `"tredo_vectors.lance/"`).
+    pub fn new(db_path: &str) -> Self {
+        println!(
+            "[VectorMemory] Initialized (JSON backend: {})",
+            db_path
+        );
+
+        Self {
+            #[cfg(feature = "lancedb")]
+            lancedb: None,
+            json: JsonBackend::new(db_path),
+        }
+    }
+
+    /// Store a new vector entry, embedding the text via the LLM executor.
+    ///
+    /// When the `lancedb` feature is enabled, this lazily initializes the
+    /// LanceDB backend on the first call (migrating any existing JSON data).
+    pub async fn store(
+        &mut self,
+        episode_id: &str,
+        symbol: &str,
+        summary_text: &str,
+        regret_score: Option<f64>,
+        llm: &LlmExecutor,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let embedding = llm.embed_text(summary_text).await?;
+
+        let entry = VectorEntry {
+            episode_id: episode_id.to_string(),
+            symbol: symbol.to_string(),
+            timestamp: Utc::now(),
+            embedding,
+            summary_text: summary_text.to_string(),
+            regret_score,
+        };
+
+        #[cfg(feature = "lancedb")]
+        {
+            if self.lancedb.is_none() {
+                let lance_path = self.json.lance_db_path();
+                let dim = entry.embedding.len();
+                match LanceDbBackend::open_or_create(&lance_path, dim).await {
+                    Ok(mut backend) => {
+                        println!(
+                            "[VectorMemory] ✅ LanceDB backend initialized at {}",
+                            lance_path
+                        );
+
+                        // Migrate existing JSON entries to LanceDB on first init
+                        let existing: Vec<VectorEntry> =
+                            self.json.entries.values().cloned().collect();
+                        for old_entry in &existing {
+                            if let Err(e) = backend.store(old_entry).await {
+                                eprintln!(
+                                    "[VectorMemory] ⚠️ Failed to migrate entry {}: {}",
+                                    old_entry.episode_id, e
+                                );
+                            }
+                        }
+                        if !existing.is_empty() {
+                            println!(
+                                "[VectorMemory] 📦 Migrated {} entries from JSON to LanceDB",
+                                existing.len()
+                            );
+                        }
+
+                        self.lancedb = Some(backend);
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[VectorMemory] ⚠️ LanceDB init failed: {}. Falling back to JSON.",
+                            e
+                        );
+                    }
+                }
+            }
+
+            if let Some(lance) = &mut self.lancedb {
+                return lance.store(&entry).await;
+            }
+        }
+
+        // JSON fallback path
+        self.json.store(entry);
+        Ok(())
+    }
+
+    /// Search for the `top_k` most similar entries by embedding the query text.
+    ///
+    /// When LanceDB is active, uses ANN search with proper vector indexing.
+    /// Otherwise, falls back to brute-force cosine similarity on JSON data.
+    pub async fn search(
+        &self,
+        query_text: &str,
+        top_k: usize,
+        llm: &LlmExecutor,
+    ) -> Result<Vec<SimilarResult>, Box<dyn std::error::Error + Send + Sync>> {
+        if self.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let query_embedding = llm.embed_text(query_text).await?;
+
+        #[cfg(feature = "lancedb")]
+        if let Some(lance) = &self.lancedb {
+            return lance
+                .search(&query_embedding, top_k, None, None)
+                .await;
+        }
+
+        // JSON brute-force fallback (also used when lancedb feature is off)
+        Ok(self.json.search(&query_embedding, top_k))
+    }
+
+    /// Synchronous search by raw vector. Always uses the JSON backend.
+    ///
+    /// For performance-sensitive paths (LLM embedding already available),
+    /// prefer the async [`search`](Self::search) method which uses LanceDB's
+    /// ANN index when available.
+    pub fn search_by_vector(&self, query_embedding: &[f32], top_k: usize) -> Vec<SimilarResult> {
+        self.json.search(query_embedding, top_k)
+    }
+
+    pub fn len(&self) -> usize {
+        self.json.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.json.is_empty()
+    }
+}
+
+// ── Cosine Similarity (unchanged) ──────────────────────────────────────────
 
 /// Compute cosine similarity between two f32 vectors.
 /// Both vectors should be L2-normalized (which Ollama returns).
@@ -169,6 +527,8 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
     let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
     dot.clamp(0.0, 1.0) as f64
 }
+
+// ── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -194,7 +554,6 @@ mod tests {
         let a = vec![1.0, 0.0];
         let b = vec![0.5, 0.5];
         let sim = cosine_similarity(&a, &b);
-        // dot product of [1,0] * [0.5,0.5] = 0.5
         assert!((sim - 0.5).abs() < 0.001);
     }
 
@@ -220,8 +579,7 @@ mod tests {
     #[test]
     fn test_search_by_vector_with_data() {
         let mut mem = VectorMemory::new(":memory:");
-        // Manually insert entries (no Ollama call needed)
-        mem.entries.insert(
+        mem.json.entries.insert(
             "ep1".to_string(),
             VectorEntry {
                 episode_id: "ep1".to_string(),
@@ -232,7 +590,7 @@ mod tests {
                 regret_score: None,
             },
         );
-        mem.entries.insert(
+        mem.json.entries.insert(
             "ep2".to_string(),
             VectorEntry {
                 episode_id: "ep2".to_string(),
@@ -244,11 +602,52 @@ mod tests {
             },
         );
 
-        // Search for something similar to ep1
         let results = mem.search_by_vector(&[0.9, 0.1], 2);
         assert_eq!(results.len(), 2);
-        // ep1 should be first (higher similarity)
         assert_eq!(results[0].episode_id, "ep1");
         assert!(results[0].similarity > 0.8);
+    }
+
+    #[test]
+    fn test_json_roundtrip() {
+        let path = "_test_vectors.json";
+        // Clean up from previous runs
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir_all("_test_vectors.lance");
+
+        // Use L2-normalized vectors so identical vectors give dot product = 1.0.
+        // [0.6, 0.8] has L2 norm = 1.0.
+        let embedding = vec![0.6_f32, 0.8_f32];
+
+        {
+            let mut mem = VectorMemory::new(path);
+            mem.json.entries.insert(
+                "ep_rt1".to_string(),
+                VectorEntry {
+                    episode_id: "ep_rt1".to_string(),
+                    symbol: "ETH".to_string(),
+                    timestamp: Utc::now(),
+                    embedding: embedding.clone(),
+                    summary_text: "Ethereum breakout".to_string(),
+                    regret_score: Some(0.2),
+                },
+            );
+            mem.json.save_to_disk().unwrap();
+        }
+
+        // Re-open and verify
+        {
+            let mut mem = VectorMemory::new(path);
+            // Force reload (automatically done in new())
+            let _ = mem.json.load_from_disk();
+            assert_eq!(mem.len(), 1);
+            let results = mem.search_by_vector(&embedding, 5);
+            assert_eq!(results.len(), 1);
+            assert_eq!(results[0].episode_id, "ep_rt1");
+            assert!((results[0].similarity - 1.0).abs() < 0.001);
+        }
+
+        // Cleanup
+        let _ = std::fs::remove_file(path);
     }
 }

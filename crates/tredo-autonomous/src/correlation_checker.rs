@@ -73,6 +73,8 @@ impl AgentSkill for CorrelationChecker {
                 score: corr,
                 note: "pair correlation proxy".to_string(),
                 confidence: 0.65,
+                direction: tredo_core::agent::SkillDirection::Neutral,
+                weight: 0.1,
             })
         } else {
             Ok(AgentOutput::Done)

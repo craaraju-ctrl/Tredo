@@ -1,6 +1,6 @@
 use crate::types::{MarketRegime, SessionInfo, TradeSignal};
-use chrono::{DateTime, Datelike, Duration, FixedOffset, Timelike, Utc, Weekday};
-use tredo_core::DisciplineRules;
+use chrono::{DateTime, Datelike, FixedOffset, Timelike, Utc, Weekday}; // Duration removed (SessionInfo now uses i64 to avoid serde issues)
+use tredo_core::{DisciplineRules, OhlcvBar};
 
 /// Get current Indian market session info (NSE/BSE)
 pub fn get_indian_session_info(now: DateTime<Utc>) -> SessionInfo {
@@ -35,7 +35,7 @@ pub fn get_indian_session_info(now: DateTime<Utc>) -> SessionInfo {
             market_open: false,
             session_name: "Pre-Open".to_string(),
             time_to_close: None,
-            time_to_open: Some(Duration::minutes(mins_to_open)),
+            time_to_open: Some(mins_to_open),
             is_pre_open: true,
             is_post_close: false,
             minutes_since_open: 0,
@@ -48,7 +48,7 @@ pub fn get_indian_session_info(now: DateTime<Utc>) -> SessionInfo {
         return SessionInfo {
             market_open: true,
             session_name: "Normal Session".to_string(),
-            time_to_close: Some(Duration::minutes(mins_to_close)),
+            time_to_close: Some(mins_to_close),
             time_to_open: None,
             is_pre_open: false,
             is_post_close: false,
@@ -62,7 +62,7 @@ pub fn get_indian_session_info(now: DateTime<Utc>) -> SessionInfo {
             market_open: false,
             session_name: "Before Hours".to_string(),
             time_to_close: None,
-            time_to_open: Some(Duration::minutes(mins_to_open)),
+            time_to_open: Some(mins_to_open),
             is_pre_open: false,
             is_post_close: false,
             minutes_since_open: 0,
@@ -161,6 +161,119 @@ pub fn estimate_market_regime(prices: &[f64], highs: &[f64], lows: &[f64]) -> Ma
     } else {
         MarketRegime::Ranging
     }
+}
+
+/// Simple RSI calculation (Wilder's method)
+pub fn compute_rsi(bars: &[OhlcvBar], period: usize) -> f64 {
+    if bars.len() < period + 1 {
+        return 50.0; // neutral
+    }
+    let mut gains = 0.0;
+    let mut losses = 0.0;
+    for i in 1..=period {
+        let change = bars[bars.len() - i].close - bars[bars.len() - i - 1].close;
+        if change > 0.0 {
+            gains += change;
+        } else {
+            losses -= change;
+        }
+    }
+    let avg_gain = gains / period as f64;
+    let avg_loss = losses / period as f64;
+    if avg_loss == 0.0 {
+        return 100.0;
+    }
+    let rs = avg_gain / avg_loss;
+    100.0 - (100.0 / (1.0 + rs))
+}
+
+/// Simple MACD (12,26,9) - returns (macd, signal, histogram)
+pub fn compute_macd(bars: &[OhlcvBar]) -> (f64, f64, f64) {
+    if bars.len() < 26 {
+        return (0.0, 0.0, 0.0);
+    }
+    let ema12 = compute_ema(bars, 12);
+    let ema26 = compute_ema(bars, 26);
+    let macd_line = ema12 - ema26;
+    // For signal, approximate with recent; full would need MACD history
+    let signal = macd_line * 0.9; // simplified
+    let hist = macd_line - signal;
+    (macd_line, signal, hist)
+}
+
+fn compute_ema(bars: &[OhlcvBar], period: usize) -> f64 {
+    if bars.is_empty() {
+        return 0.0;
+    }
+    let k = 2.0 / (period as f64 + 1.0);
+    let mut ema = bars[0].close;
+    for bar in bars.iter().skip(1) {
+        ema = bar.close * k + ema * (1.0 - k);
+    }
+    ema
+}
+
+/// Autonomous level calculator: agent decides entry, SL, TP from context + indicators
+/// No external price points provided.
+pub fn compute_autonomous_levels(
+    symbol: &str,
+    current_price: f64,
+    pivots: &tredo_core::PivotLevels,
+    _patterns: &[tredo_core::CandlestickPattern], // patterns come from MI state; kept for future extension
+    regime: crate::types::MarketRegime,
+    rsi: f64,
+    macd_hist: f64,
+    atr_pct: f64,
+    rules: &DisciplineRules,
+) -> (f64, f64, f64, f64) {  // entry, sl, tp, rr
+    let mut direction = tredo_core::TradeDirection::Long;
+    let mut entry = current_price;
+
+    // Decide direction from indicators (agentic)
+    if rsi > 70.0 || (regime == crate::types::MarketRegime::TrendingBear && macd_hist < 0.0) {
+        direction = tredo_core::TradeDirection::Short;
+    } else if rsi < 30.0 || (regime == crate::types::MarketRegime::TrendingBull && macd_hist > 0.0) {
+        direction = tredo_core::TradeDirection::Long;
+    }
+
+    // Entry near current or breakout
+    entry = if direction == tredo_core::TradeDirection::Long {
+        current_price.max(pivots.pivot * 1.001)  // slight breakout
+    } else {
+        current_price.min(pivots.pivot * 0.999)
+    };
+
+    // SL using ATR + pivot support (agent identifies protection level)
+    let atr = current_price * atr_pct.max(0.01);
+    let sl = if direction == tredo_core::TradeDirection::Long {
+        (current_price - atr * 1.5).min(pivots.s1)
+    } else {
+        (current_price + atr * 1.5).max(pivots.r1)
+    };
+
+    // TP: 2:1 or 3:1 RR or next pivot target (agentic target based on structure)
+    let risk = (entry - sl).abs();
+    let tp = if direction == tredo_core::TradeDirection::Long {
+        entry + risk * 2.0
+    } else {
+        entry - risk * 2.0
+    };
+
+    let rr = if risk > 0.0 { risk / (tp - entry).abs().max(0.0001) } else { 1.0 };
+
+    // Constrain to rules
+    let min_rr = 1.5;
+    let final_tp = if rr < min_rr {
+        if direction == tredo_core::TradeDirection::Long {
+            entry + risk * min_rr
+        } else {
+            entry - risk * min_rr
+        }
+    } else {
+        tp
+    };
+
+    (entry, sl, final_tp, if risk > 0.0 { risk / (final_tp - entry).abs() } else { 2.0 })
 }
 
 /// Check if a trading signal meets minimum quality thresholds

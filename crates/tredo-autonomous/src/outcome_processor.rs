@@ -136,6 +136,36 @@ impl OutcomeProcessor {
             Err(e) => eprintln!("[OutcomeProcessor] ⚠ Failed to store episode: {}", e),
         }
 
+        // ── Record skill performance for MetaControl weight tuning ────────
+        {
+            let votes = self.state.last_skill_votes.read().await;
+            let direction_str = match pos.direction {
+                tredo_core::TradeDirection::Long => "Bullish",
+                tredo_core::TradeDirection::Short => "Bearish",
+            };
+            for vote in votes.iter() {
+                let was_correct = match vote.direction {
+                    tredo_core::SkillDirection::Bullish => direction_str == "Bullish",
+                    tredo_core::SkillDirection::Bearish => direction_str == "Bearish",
+                    tredo_core::SkillDirection::Neutral => true, // neutral is always "correct"
+                };
+                let sp = crate::episode_store::SkillPerformanceRow {
+                    id: 0,
+                    episode_id: episode.id.clone(),
+                    skill_name: vote.skill_name.clone(),
+                    direction: format!("{:?}", vote.direction),
+                    weight_used: vote.weight,
+                    confidence: vote.confidence,
+                    score: vote.score,
+                    was_correct,
+                    recorded_at: Utc::now().to_rfc3339(),
+                };
+                if let Err(e) = store.insert_skill_performance(&sp) {
+                    eprintln!("[OutcomeProcessor] ⚠ Failed to store skill performance: {}", e);
+                }
+            }
+        }
+
         // ── High-regret → regret_events table ─────────────────────────────
         if regret_score >= 0.5 {
             let ev = RegretEvent {

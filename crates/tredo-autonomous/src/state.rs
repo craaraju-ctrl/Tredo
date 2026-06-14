@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tredo_core::{
     CalendarEvent, Config, DisciplineRules, LlmExecutor, MemoryStore, NewsContext, OhlcvBar,
-    PivotLevels, TradingGoals, VectorMemory,
+    PivotLevels, SkillVote, TradingGoals, VectorMemory,
 };
 use tredo_core::{CandlestickPattern, MultiTfPatternConfirmation};
 
@@ -110,6 +110,13 @@ pub struct SharedState {
     pub update_tx: Arc<tokio::sync::broadcast::Sender<String>>,
     /// SQLite-backed persistent store for closed trade episodes, regret events, COT logs.
     pub episode_store: Arc<EpisodeStore>,
+    /// The most recent skill votes, captured by MarketIntelligenceAgent.
+    /// Consumed by OutcomeProcessor when a trade closes.
+    pub last_skill_votes: Arc<RwLock<Vec<SkillVote>>>,
+
+    /// The aggregated signal from skills (produced by SkillAggregator in MI).
+    /// Now wired into strategy decision for real use of ensemble (previously only in COT).
+    pub last_aggregated_signal: Arc<RwLock<Option<tredo_core::AggregatedSignal>>>,
 }
 
 impl SharedState {
@@ -176,12 +183,14 @@ impl SharedState {
             latest_news: Arc::new(RwLock::new(HashMap::new())),
             vector_memory: Arc::new(tokio::sync::Mutex::new(VectorMemory::new(
                 "tredo_vectors.json",
-            ))),
+            ))), // With `lancedb` feature on tredo-core, first store() lazily creates sibling tredo_vectors.lance/ + migrates JSON (see vector_memory.rs)
             last_patterns: Arc::new(RwLock::new(HashMap::new())),
             last_mtf_patterns: Arc::new(RwLock::new(HashMap::new())),
             cot_store: Arc::new(RwLock::new(Vec::new())),
             cot_id_counter: Arc::new(AtomicU64::new(1)),
             episode_store,
+            last_skill_votes: Arc::new(RwLock::new(Vec::new())),
+            last_aggregated_signal: Arc::new(RwLock::new(None)),
             update_tx: Arc::new(update_tx),
         })
     }

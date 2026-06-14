@@ -2,6 +2,10 @@
 // Research: TradingAgents/FINCON style multi-agent debate for robust decisions.
 // Replaces or augments single LLM in StrategyDecision for hands-off quality.
 // Uses local DebateTurn (core AgentOutput is enum with specific variants, not freeform).
+//
+// NOTE: MarketIntelligence now produces SkillResult + runs SkillAggregator (see market_intelligence.rs).
+// Debate currently uses legacy direct skill calls for proposer/critic etc. + custom buy_score.
+// Full unification (pass aggregated signal from MI into debate) is the next logical step after this wiring.
 
 use crate::state::SharedState;
 use crate::{

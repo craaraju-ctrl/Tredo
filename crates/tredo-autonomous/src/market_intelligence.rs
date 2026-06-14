@@ -6,7 +6,7 @@ use tredo_core::{
     calculate_confluence_score, calculate_pivot_points, detect_patterns, detect_patterns_multi_tf,
     format_patterns, is_in_trading_session, Agent, AgentInput, AgentOutput, AgentTier,
     KronosForecastRequest, KronosForecastTool, MarketContext, MultiTfPatternConfirmation, OhlcvBar,
-    TrendDirection,
+    SkillVote, TrendDirection,
 };
 
 pub struct MarketIntelligenceAgent {
@@ -195,6 +195,7 @@ impl MarketIntelligenceAgent {
         // Strong skills set: "how to do" via pluggable AgentSkill trait.
         // Collect and execute skills for richer "how" (e.g., sentiment for mood, vol for risk).
         // Agents know "what to do" (role); skills tell execution method; rules gate; trained memory (recall) makes smarter.
+        // Skill weights are read from DisciplineRules (tunable by MetaControlAgent).
         let skills: Vec<Box<dyn tredo_core::skills::AgentSkill>> = vec![
             Box::new(crate::sentiment_analyzer::SentimentAnalyzer::new(
                 self.state.clone(),
@@ -211,21 +212,65 @@ impl MarketIntelligenceAgent {
             Box::new(crate::on_chain_data::OnChainData::new(self.state.clone())),
             // TrainedMemorySkill can be added here too for unified pluggable recall execution.
         ];
+        let rules_snapshot = self.state.rules.read().await;
         let mut skill_results: Vec<String> = vec![];
+        let mut votes: Vec<SkillVote> = vec![];
+        let mut skill_outputs: Vec<tredo_core::AgentOutput> = vec![];
         for skill in &skills {
             if skill.is_available() {
                 if let Ok(tredo_core::AgentOutput::SkillResult {
-                    name, score, note, ..
+                    name,
+                    score,
+                    note,
+                    confidence,
+                    direction,
+                    ..
                 }) = skill
                     .execute(&AgentInput::ConfluenceRequest {
                         context: context.clone(),
                     })
                     .await
                 {
+                    let weight = rules_snapshot.get_skill_weight(&name);
                     skill_results.push(format!("{}={:.2}({})", name, score, note));
+                    votes.push(SkillVote {
+                        skill_name: name.clone(),
+                        direction,
+                        weight,
+                        confidence,
+                        score,
+                    });
+                    // Collect full SkillResult for aggregator (resolves "implemented but not wired" gap)
+                    skill_outputs.push(tredo_core::AgentOutput::SkillResult {
+                        name: name.clone(),
+                        score,
+                        note: note.clone(),
+                        confidence,
+                        direction,
+                        weight,
+                    });
                 }
             }
         }
+        // Store votes for OutcomeProcessor to consume when trade closes
+        {
+            let mut last = self.state.last_skill_votes.write().await;
+            *last = votes;
+        }
+
+        // NEW: Use SkillAggregator to produce structured net signal for COT / future decision use
+        let aggregated = tredo_core::SkillAggregator::aggregate(&skill_outputs);
+        // Store for use in strategy decision (real integration of ensemble, not just COT)
+        {
+            let mut last_agg = self.state.last_aggregated_signal.write().await;
+            *last_agg = Some(aggregated.clone());
+        }
+        let agg_summary = if !skill_outputs.is_empty() {
+            format!(" | AGGREGATED net={:+.3} conv={:.0}% {}", aggregated.net_signal, aggregated.conviction * 100.0, aggregated.summary())
+        } else {
+            String::new()
+        };
+
         let skills_summary = if skill_results.is_empty() {
             "none".to_string()
         } else {
@@ -237,7 +282,7 @@ impl MarketIntelligenceAgent {
                 "MarketIntelligence",
                 &format!("skills executed for {}", symbol),
                 "SKILLS_RUN",
-                &format!("{} + trained memory", skills_summary),
+                &format!("{} + trained memory{}", skills_summary, agg_summary),
                 0.75,
                 0,
                 None,

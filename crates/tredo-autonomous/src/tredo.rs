@@ -372,33 +372,35 @@ impl Tredo {
     // ── Executer dispatch ─────────────────────────────────────────────────
     /// Run the Executer group: makes a trade decision and executes it.
     /// Delegates to sub-agents: strategy_decision -> portfolio_manager -> execution_coordinator.
+    /// Run the Executer group autonomously.
+    /// The agent (StrategyDecision) identifies direction + entry/SL/TP itself from indicators (RSI, MACD, patterns, volume, pivots, regime, etc.).
+    /// No external price points or direction are provided — this is what makes it agentic AI, not a bot.
     pub async fn run_executer(
         &self,
         symbol: &str,
-        direction: TradeDirection,
-        entry: f64,
-        stop: f64,
-        target: f64,
+        current_price: f64,
     ) -> Result<Option<TradeSignal>, Box<dyn Error + Send + Sync>> {
         println!(
-            "[Tredo::Executer] Making decision for {} (direction: {:?})",
-            symbol, direction
+            "[Tredo::Executer] Agent making fully autonomous decision for {} @ current {:.2}",
+            symbol, current_price
         );
 
-        // Strategy decision (LLM)
+        // Agent decides everything (levels + direction) using its skills, debate, memory, rules.
         let signal_opt = self
             .executer
             .strategy
-            .generate_signal(symbol, direction, entry, stop, target)
+            .generate_signal(symbol, current_price)
             .await?;
 
         match &signal_opt {
             Some(sig) => {
                 println!(
-                    "[Tredo::Executer] ✅ LLM decided {:?} {} @ {:.2} (conf: {:.1}%)",
+                    "[Tredo::Executer] ✅ AGENT decided {:?} {} @ entry={:.2} SL={:.2} TP={:.2} (conf: {:.1}%)",
                     sig.direction,
                     symbol,
                     sig.entry_price,
+                    sig.stop_loss,
+                    sig.take_profit,
                     sig.confidence_score * 100.0
                 );
 
@@ -412,7 +414,7 @@ impl Tredo {
                 Ok(Some(sig.clone()))
             }
             None => {
-                println!("[Tredo::Executer] LLM decided HOLD for {}", symbol);
+                println!("[Tredo::Executer] Agent decided HOLD for {}", symbol);
                 Ok(None)
             }
         }

@@ -1,4 +1,4 @@
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tredo_core::TradeDirection;
 
@@ -97,8 +97,11 @@ pub enum RiskRecommendation {
 pub struct SessionInfo {
     pub market_open: bool,
     pub session_name: String,
-    pub time_to_close: Option<Duration>,
-    pub time_to_open: Option<Duration>,
+    /// Minutes until close (or open). Stored as i64 to avoid chrono Duration serde issues
+    /// in test builds / episode_store contexts (chrono "serde" feature enables DateTime but
+    /// Duration requires explicit handling in some derives).
+    pub time_to_close: Option<i64>,
+    pub time_to_open: Option<i64>,
     pub is_pre_open: bool,
     pub is_post_close: bool,
     pub minutes_since_open: i64,

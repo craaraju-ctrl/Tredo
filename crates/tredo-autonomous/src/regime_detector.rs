@@ -70,11 +70,22 @@ impl AgentSkill for RegimeDetector {
                 context.symbol,
                 regime
             );
+            let direction = match regime {
+                crate::types::MarketRegime::TrendingBull => {
+                    tredo_core::agent::SkillDirection::Bullish
+                }
+                crate::types::MarketRegime::TrendingBear => {
+                    tredo_core::agent::SkillDirection::Bearish
+                }
+                _ => tredo_core::agent::SkillDirection::Neutral,
+            };
             Ok(AgentOutput::SkillResult {
                 name: self.name().to_string(),
                 score: 0.8, // regime confidence proxy
                 note: format!("{:?}", regime),
                 confidence: 0.75,
+                direction,
+                weight: 0.25,
             })
         } else {
             Ok(AgentOutput::Done)

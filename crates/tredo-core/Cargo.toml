@@ -11,7 +11,7 @@ readme.workspace = true
 
 [features]
 default = []
-lancedb = ["dep:lancedb"]
+lancedb = ["dep:lancedb", "dep:futures", "dep:arrow-array", "dep:arrow-schema"]
 
 [dependencies]
 async-trait = "0.1"
@@ -19,9 +19,12 @@ redb = "1.5"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { workspace = true }
 log = "0.4"
 reqwest = { version = "0.11", features = ["json"] }
 urlencoding = "2.1"
 quick-xml = "0.31"
-lancedb = { version = "0.4", optional = true }  # Optional for full production vector (LanceDB embedded). `cargo build --features lancedb` (may need arrow pins; falls back to JSON). Enables scale for trained memory RAG in self-evolving agents. See vector_memory.rs and research for details.
+lancedb = { version = "0.4", optional = true }  # Optional for full production vector (LanceDB embedded). `cargo build --features lancedb`. Enables scale for trained memory RAG in self-evolving agents.
+futures = { version = "0.3", optional = true }  # Required for TryStreamExt when using lancedb
+arrow-array = { version = "=51.0.0", optional = true }  # Explicit dep for LanceDB backend (must match lancedb 0.4.20)
+arrow-schema = { version = "=51.0.0", optional = true }  # Explicit dep for LanceDB backend (must match lancedb 0.4.20)

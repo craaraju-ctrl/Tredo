@@ -116,16 +116,13 @@ pub async fn medium_loop(
                         }
                     };
 
-                    let change = price - 20000.0; // approximate direction
-                    let direction = if change >= 0.0 { TradeDirection::Long } else { TradeDirection::Short };
-                    let sl_pct = if is_crypto { 0.012 } else { 0.006 };
-                    let tp_pct = if is_crypto { 0.030 } else { 0.018 };
-                    let stop   = if direction == TradeDirection::Long { price * (1.0 - sl_pct) } else { price * (1.0 + sl_pct) };
-                    let target = if direction == TradeDirection::Long { price * (1.0 + tp_pct) } else { price * (1.0 - tp_pct) };
+                    println!("\n[MediumLoop] 📊 {} @ {:.2} — Agentic pipeline starting (agent will decide direction + exact levels from indicators: trend, patterns, volume, RSI, MACD, ATR, pivots, memory, debate)", symbol, price);
 
-                    println!("\n[MediumLoop] 📊 {} @ {:.2} — Pipeline starting", symbol, price);
-
-                    match orchestrator.run_full_pipeline(symbol, direction, price, stop, target).await {
+                    // Pure agentic call: the loop only observes the market price.
+                    // The Tredo agent (Identifier skills + StrategyDecision debate + autonomous level calculation)
+                    // decides *if* to trade, the direction, and the precise entry/SL/TP itself.
+                    // No hardcoded percentages or pre-supplied levels. This is agentic AI, not a bot.
+                    match orchestrator.run_full_pipeline(symbol).await {
                         Ok(summary) => {
                             if summary.executed {
                                 println!("[MediumLoop] ✅ Trade EXECUTED autonomously | {}", summary.reason);

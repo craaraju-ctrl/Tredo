@@ -93,7 +93,16 @@ impl AgentSkill for TrainedMemorySkill {
             self.name(),
             &recall[..recall.len().min(120)]
         );
-        // In full system, return a richer AgentOutput with the recall string for the calling agent to use in its reasoning/COT.
-        Ok(AgentOutput::Done)
+        // Return the recall string as a structured SkillResult so calling agents
+        // can aggregate it into their reasoning / COT.
+        let has_data = !recall.contains("No strong trained memory match");
+        Ok(AgentOutput::SkillResult {
+            name: self.name().to_string(),
+            score: if has_data { 0.7 } else { 0.3 },
+            note: recall,
+            confidence: if has_data { 0.8 } else { 0.2 },
+            direction: crate::agent::SkillDirection::Neutral,
+            weight: 0.2,
+        })
     }
 }

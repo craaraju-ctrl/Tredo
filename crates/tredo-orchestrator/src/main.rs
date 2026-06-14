@@ -682,16 +682,14 @@ async fn trigger_orchestra_cycle(
 ) -> impl axum::response::IntoResponse {
     use tredo_core::TradeDirection;
     let sym = req.symbol.unwrap_or_else(|| "NIFTY".to_string());
-    let dir = TradeDirection::Long;
-    let entry = 24500.0;
-    let stop = 24200.0;
-    let target = 25000.0;
 
-    println!("[WebAPI] === FULL ORCHESTRA CYCLE TRIGGERED FROM HTTP API ===");
+    println!("[WebAPI] === FULL ORCHESTRA CYCLE TRIGGERED FROM HTTP API (agentic - no pre-supplied levels) ===");
 
+    // Agentic trigger: only the symbol. The agent observes market data from state and decides
+    // direction + its own entry/SL/TP using full analysis (indicators it computes, debate, memory, rules).
     match state
         .orchestrator
-        .run_full_pipeline(&sym, dir, entry, stop, target)
+        .run_full_pipeline(&sym)
         .await
     {
         Ok(summary) => {

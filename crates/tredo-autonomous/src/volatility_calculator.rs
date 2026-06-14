@@ -67,6 +67,8 @@ impl AgentSkill for VolatilityCalculator {
                 score: vol,
                 note: format!("expansion={}", exp),
                 confidence: if exp { 0.8 } else { 0.5 },
+                direction: tredo_core::agent::SkillDirection::Neutral,
+                weight: 0.2,
             })
         } else {
             Ok(AgentOutput::Done)

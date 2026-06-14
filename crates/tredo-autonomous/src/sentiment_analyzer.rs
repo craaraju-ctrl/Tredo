@@ -64,6 +64,14 @@ impl AgentSkill for SentimentAnalyzer {
                 score,
                 note: "news keyword sentiment".to_string(),
                 confidence: 0.6,
+                direction: if score > 0.55 {
+                    tredo_core::agent::SkillDirection::Bullish
+                } else if score < 0.45 {
+                    tredo_core::agent::SkillDirection::Bearish
+                } else {
+                    tredo_core::agent::SkillDirection::Neutral
+                },
+                weight: 0.3,
             })
         } else {
             Ok(AgentOutput::Done)
