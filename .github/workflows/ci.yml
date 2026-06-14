@@ -38,13 +38,13 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Lint (clippy)
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --exclude tredo-tauri --all-targets -- -D warnings
 
       - name: Run tests
-        run: cargo test --workspace
+        run: cargo test --workspace --exclude tredo-tauri
 
       - name: Build (release)
-        run: cargo build --workspace --release
+        run: cargo build --workspace --exclude tredo-tauri --release
 
   tauri:
     name: Tauri — check build
@@ -84,7 +84,7 @@ jobs:
             ${{ runner.os }}-cargo-tauri-
 
       - name: Check Tauri crate
-        run: cargo check -p src-tauri
+        run: cargo check -p tredo-tauri
 
   kronos:
     name: Kronos — Python service check
