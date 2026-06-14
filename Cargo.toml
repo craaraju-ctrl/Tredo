@@ -4,7 +4,6 @@ resolver = "2"
 members = [
     "crates/tredo-core",
     "crates/tredo-orchestrator",
-    "crates/tredo-agents",
     "crates/tredo-autonomous",
     "crates/tredo-server",
     "src-tauri",

@@ -7277,17 +7277,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tredo-agents"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "chrono",
- "log",
- "tredo-autonomous",
- "tredo-core",
-]
-
-[[package]]
 name = "tredo-autonomous"
 version = "1.0.0"
 dependencies = [
@@ -7330,7 +7319,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "tower-http 0.5.2",
- "tredo-agents",
  "tredo-autonomous",
  "tredo-core",
 ]
@@ -7366,7 +7354,6 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-shell",
  "tokio",
- "tredo-agents",
  "tredo-autonomous",
  "tredo-core",
 ]
