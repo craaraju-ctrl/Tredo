@@ -1,6 +1,6 @@
-# 🧬 tredo — True Learning Agentic Trading Architecture (Trading Real-time Edge Decision Optimisation)
+# 🧬 tredo Agentic Trading Architecture
 
-> **Goal:** The full autonomous co-pilot with Terminal UI. Self-learning agentic system with debate, memory, temporal loops, and strict discipline.
+**Goal:** A production-grade autonomous co-pilot with first-class Terminal UI. A self-improving agentic system built on debate, layered memory, temporal loops, and strict deterministic discipline.
 
 ---
 

@@ -1,6 +1,8 @@
 # 💻 tredo Low-Resource Architecture
 
-> **Trading Real-time Edge Decision Optimisation** — 8GB RAM friendly full Terminal UI + autonomous engine.
+**Trading Real-time Edge Decision Optimisation** — Designed to run comfortably on 8 GB RAM with a full Terminal UI and autonomous engine.
+
+This document outlines the resource-conscious design choices that enable reliable operation without high-end hardware.
 
 ---
 

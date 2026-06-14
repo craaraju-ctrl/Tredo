@@ -141,25 +141,95 @@ case "${1:-help}" in
   validate)
     echo "=== tredo validate (REAL-TIME paper crypto validation + self-evolution) ==="
     source "$CONFIG_FILE" 2>/dev/null || true
-    # Parse simple args for extended mode (e.g. ./tredo validate --extended --duration 300 --induce)
+    # Parse args
     EXTENDED=false
-    DURATION=60   # seconds for short; use 300+ for real compounding observation
+    LONG=false
+    CYCLES=10
+    DURATION=60
     INDUCE_REGRET=false
+    SYMBOLS="${WATCHLIST:-BTC,ETH,SOL}"
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --extended) EXTENDED=true; shift ;;
+        --long) LONG=true; shift ;;
+        --cycles) CYCLES="${2:-50}"; shift 2 ;;
         --duration) DURATION="${2:-300}"; shift 2 ;;
         --induce|--induce-regret) INDUCE_REGRET=true; shift ;;
+        --symbols) SYMBOLS="${2:-BTC,ETH}"; shift 2 ;;
         *) shift ;;
       esac
     done
-    echo "Live paper crypto on ${WATCHLIST:-BTC,ETH} using real Binance feeds + Ollama debate + autonomous paper exec."
+
+    if [ "$LONG" = true ]; then
+      echo "=== tredo LONG-RUN SELF-EVOLUTION VALIDATION ==="
+      echo "Symbols: $SYMBOLS"
+      echo "Cycles: $CYCLES | Induce regret: $INDUCE_REGRET"
+      echo "PAPER_MODE=${PAPER_MODE} (enforced)."
+      if [ "$INDUCE_REGRET" = true ]; then
+        echo ">>> INDUCING REGRET: Using tight 0.5% SL to force high-regret closes."
+        export VALIDATION_INDUCE_REGRET=true
+        export VALIDATION_TIGHT_SL_PCT=0.5
+      fi
+      cargo run -p tredo-orchestrator &
+      ORCH_PID=$!
+      sleep 8
+      echo "Orchestrator started (PID=$ORCH_PID). Running ${CYCLES} pipeline cycles..."
+      # Run the SelfEvolutionValidator by triggering cycles via API
+      for i in $(seq 1 $CYCLES); do
+        for sym in $(echo $SYMBOLS | tr ',' ' '); do
+          curl -s --max-time 10 -X POST "http://127.0.0.1:8080/api/trigger_cycle" \
+            -H 'content-type: application/json' \
+            -d "{\"symbol\":\"$sym\"}" > /dev/null 2>&1 || true
+        done
+        sleep 3
+        if (( i % 10 == 0 )); then
+          echo "  ... $i / $CYCLES cycles complete"
+        fi
+      done
+      echo
+      echo "=== EVOLUTION ANALYSIS ==="
+      DB="tredo_history.db"
+      if [ -f "$DB" ]; then
+        echo "Per-bucket regret trend (10 episodes per bucket):"
+        # Show regret trend across all closed trades ordered by time
+        sqlite3 "$DB" "SELECT
+          (ROW_NUMBER() OVER (ORDER BY exit_time) - 1) / 10 AS bucket,
+          ROUND(AVG(regret_score), 3) AS avg_regret,
+          COUNT(*) AS trades,
+          SUM(CASE WHEN outcome='WIN' THEN 1 ELSE 0 END) AS wins,
+          SUM(CASE WHEN outcome='LOSS' THEN 1 ELSE 0 END) AS losses
+        FROM closed_trades
+        GROUP BY bucket
+        ORDER BY bucket;" 2>/dev/null || echo "(no trades yet)"
+        echo
+        echo "Rule adaptations applied:"
+        sqlite3 "$DB" "SELECT rule_name, old_value, new_value, reason, applied_at FROM rule_changes ORDER BY applied_at;" 2>/dev/null || echo "(none)"
+        echo
+        echo "High-regret episodes (regret >= 0.65):"
+        sqlite3 "$DB" "SELECT symbol, ROUND(regret_score,2), outcome, lesson, exit_time FROM closed_trades WHERE regret_score >= 0.65 ORDER BY exit_time DESC LIMIT 10;" 2>/dev/null || echo "(none)"
+      else
+        echo "No $DB found."
+      fi
+      kill $ORCH_PID 2>/dev/null || true
+      wait $ORCH_PID 2>/dev/null || true
+      echo
+      echo "To also compare regret-trend before/after rule adaptation, run:"
+      echo "  ./tredo validate --long --cycles 20   # first run (pre-adaptation)"
+      echo "  ./tredo validate --long --cycles 20   # second run (post-adaptation)"
+      echo "And compare bucket results between the two runs."
+      exit 0
+    fi
+
+    echo "Live paper crypto on ${SYMBOLS} using real Binance feeds + Ollama debate + autonomous paper exec."
     echo "Mode: ${EXTENDED:+EXTENDED }DURATION=${DURATION}s INDUCE_REGRET=${INDUCE_REGRET}"
     echo "PAPER_MODE=${PAPER_MODE} (enforced)."
     if [ "$INDUCE_REGRET" = true ]; then
       echo ">>> INDUCING REGRET: Using tight risk for validation (expect more SL hits -> meta adaptation)."
       export VALIDATION_INDUCE_REGRET=true
-      export VALIDATION_TIGHT_SL_PCT=0.5   # 0.5% SL for quick stops in paper
+      export VALIDATION_TIGHT_SL_PCT=0.5
+    fi
+    if [ "$EXTENDED" = true ]; then
+      echo ">>> EXTENDED MODE: ${DURATION}s run with periodic pipeline triggers."
     fi
     LOG=/tmp/tredo_validate.log
     > "$LOG"
@@ -168,17 +238,15 @@ case "${1:-help}" in
       echo "=== Status ===" >> "$LOG"
       curl -s --max-time 3 "http://127.0.0.1:8080/api/status" | head -c 300 >> "$LOG" || true
       echo >> "$LOG"
-      # Force some pipeline cycles on crypto symbols (real debate + possible paper)
-      for sym in $(echo ${WATCHLIST:-BTC,ETH,SOL} | tr ',' ' '); do
+      for sym in $(echo $SYMBOLS | tr ',' ' '); do
         echo "Triggering $sym ..." >> "$LOG"
         curl -s --max-time 8 -X POST "http://127.0.0.1:8080/api/trigger_cycle" -H 'content-type: application/json' -d "{\"symbol\":\"$sym\"}" >> "$LOG" || true
         sleep 2
       done
       if [ "$INDUCE_REGRET" = true ]; then
-        echo "=== INDUCING REGRET: Forcing a bad paper trade with tight SL to generate high-regret close quickly in real-time paper (live prices will monitor SL) ===" >> "$LOG"
-        # Hardcoded approx for BTC based on live MTF in runs (~64500); in real terminal, price will be current and live updates will hit SL if moves against (or use volatile pair)
+        echo "=== INDUCING REGRET: Forcing a paper trade with tight SL ===" >> "$LOG"
         ENTRY=64500
-        TIGHT_SL=64400  # tight ~0.15% SL for quick induction in paper crypto test
+        TIGHT_SL=64400
         TP=68000
         curl -s --max-time 5 -X POST "http://127.0.0.1:8080/api/trade" -H 'content-type: application/json' -d "{
           \"symbol\": \"BTC\",
@@ -188,16 +256,16 @@ case "${1:-help}" in
           \"take_profit\": $TP,
           \"position_size\": 0.001
         }" >> "$LOG" || true
-        echo "Forced bad LONG on BTC with tight SL $TIGHT_SL for regret path (real paper will close on live price <= SL)." >> "$LOG"
+        echo "Forced LONG on BTC with tight SL $TIGHT_SL for regret path" >> "$LOG"
         sleep 8
       fi
       if [ "$EXTENDED" = true ]; then
-        echo "=== EXTENDED MODE: running for ${DURATION}s with periodic triggers to allow live prices + potential SL hits ===" >> "$LOG"
+        echo "=== EXTENDED MODE: running for ${DURATION}s ===" >> "$LOG"
         end=$((SECONDS + DURATION))
         tick=0
         while [ $SECONDS -lt $end ]; do
           tick=$((tick + 1))
-          for sym in $(echo ${WATCHLIST:-BTC,ETH,SOL} | tr ',' ' '); do
+          for sym in $(echo $SYMBOLS | tr ',' ' '); do
             curl -s --max-time 5 -X POST "http://127.0.0.1:8080/api/trigger_cycle" -H 'content-type: application/json' -d "{\"symbol\":\"$sym\"}" >> "$LOG" 2>/dev/null || true
           done
           sleep 15
@@ -211,30 +279,28 @@ case "${1:-help}" in
       kill $V_PID 2>/dev/null || true
       wait $V_PID 2>/dev/null || true
     )
-    echo "=== VALIDATE SUMMARY (real-time paper crypto + self-evo hooks) ==="
-    tail -50 "$LOG" | cat
+    echo "=== VALIDATE SUMMARY ==="
+    tail -30 "$LOG" | cat
     echo
     echo "=== EVOLUTION ANALYSIS (regret, meta, compounding from real paper db) ==="
     DB="tredo_history.db"
     if [ -f "$DB" ]; then
-      echo "Recent high-regret episodes (from real paper closes):"
-      sqlite3 "$DB" "SELECT symbol, regret_score, outcome, exit_reason, lesson FROM closed_trades WHERE regret_score > 0.3 ORDER BY exit_time DESC LIMIT 10;" 2>/dev/null || echo "(no closed_trades or no high regret yet)"
+      echo "Recent high-regret episodes:"
+      sqlite3 "$DB" "SELECT symbol, regret_score, outcome, exit_reason, lesson FROM closed_trades WHERE regret_score > 0.3 ORDER BY exit_time DESC LIMIT 10;" 2>/dev/null || echo "(none)"
       echo
       echo "Regret events for MetaControl:"
-      sqlite3 "$DB" "SELECT symbol, regret_score, lesson, rule_violated FROM regret_events ORDER BY recorded_at DESC LIMIT 5;" 2>/dev/null || echo "(no regret_events table or data)"
+      sqlite3 "$DB" "SELECT symbol, regret_score, lesson, rule_violated FROM regret_events ORDER BY recorded_at DESC LIMIT 5;" 2>/dev/null || echo "(none)"
       echo
-      echo "Recent rule adaptations (if logged):"
-      sqlite3 "$DB" "SELECT rule_name, old_value, new_value, reason FROM rule_changes ORDER BY applied_at DESC LIMIT 5;" 2>/dev/null || echo "(no rule_changes or none applied - run longer with --induce to generate high regret >3)"
+      echo "Recent rule adaptations:"
+      sqlite3 "$DB" "SELECT rule_name, old_value, new_value, reason FROM rule_changes ORDER BY applied_at DESC LIMIT 5;" 2>/dev/null || echo "(none - run with --induce to generate high regret)"
     else
-      echo "No $DB found for analysis (run produced episodes in memory/redb only)."
+      echo "No $DB found."
     fi
     echo
-    echo "To observe compounding self-evo in REAL-TIME paper crypto:"
-    echo "  1. Use volatile pair or --induce-regret (forces tight 0.5% SL in this run)."
-    echo "  2. ./tredo validate --extended --duration 600 --induce-regret   # 10 min real run"
-    echo "  3. Watch logs for SL hits -> regret -> (on next meta) RULE_ADAPT in COT."
-    echo "  4. Query dbs or /cot for decreasing regret trend + tighter max_risk_per_trade over cycles."
-    echo "See research/remaining-implementation-blueprint-2026.md and Build.md for full plans."
+    echo "For full self-evolution validation with regret trend analysis:"
+    echo "  ./tredo validate --long --cycles 50 --induce-regret"
+    echo "  ./tredo validate --long --cycles 100 --induce-regret --symbols BTC,ETH"
+    echo "See research/remaining-implementation-blueprint-2026.md for details."
     ;;
 
   *) echo "tredo CLI (setup | tui | orchestrator | build | test | services | meta | validate)"; ./tredo services | head -5 ;;

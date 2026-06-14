@@ -1,105 +1,133 @@
 # ⚡ tredo — Trading Real-time Edge Decision Optimisation
 
-> **Production-grade, Rust-first hierarchical multi-agent trading co-pilot** with a beautiful full **Terminal UI**. Enforces a rigorous **Disciplined Core** of professional trading rules while incorporating memory-driven learning, multi-agent debate, and selective LLM orchestration. Real-time paper crypto validated. Self-evolving loop (debate → execution → reflection → meta adaptation) intact.
+**A production-grade, Rust-first autonomous agentic trading co-pilot.**
+
+tredo combines a rigorous **Disciplined Core** (professional trading rules enforced in Rust), hierarchical multi-agent intelligence with structured debate, rich episodic memory with regret-driven reflection, and a powerful real-time Terminal UI.
+
+- **Real-time paper trading validated** on live Binance data for crypto (BTC, ETH, SOL and more).
+- **Self-evolving loop** demonstrated: debate + skills + trained memory → paper execution → reflection with regret scoring → meta rule adaptation.
+- **Paper-first** until the full autonomous loop is solid and observable.
 
 [![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange?logo=rust)](https://www.rust-lang.org)
 [![Tokio](https://img.shields.io/badge/Async-Tokio-red?logo=Tokio)](https://tokio.rs)
 [![Tauri](https://img.shields.io/badge/UI-Tauri-ffc131?logo=tauri)](https://tauri.app)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 
-**Fresh TREDO repository** — full rebrand and cleanup from previous ATES work. All old data, GitHub workflows, and build artifacts removed for clean start.
+**Fresh TREDO repository** — complete rebrand and cleanup. All previous TREDO-era data, GitHub workflows, build artifacts, and historical databases have been removed for a clean starting point.
 
 ---
 
-## 🏛️ System Architecture
+## Architecture Overview
 
-```mermaid
-graph TB
-    subgraph "UI Layer [Full Terminal UI (primary) + Tauri (secondary)]"
-        T[tredo Terminal UI (ratatui)]
-        COT[Chain-of-Thought\nLive Log]
-        DASH[Dashboard\nPortfolio + P&L]
-        TRAD[Watchlist + Decisions]
-    end
+tredo uses a **two-tier hierarchical architecture** with temporal loops and layered memory.
 
-    subgraph "Orchestration Layer [tredo-orchestrator]"
-        FAST[Fast Loop\n5s: Price + SL/TP]
-        MED[Medium Loop\n5m: Full Pipeline]
-        SLOW[Slow Loop\n24h: Reflection]
-        ORCH[AutonomousOrchestrator]
-    end
+### Core Principles
+- **Rules + Memory > Pure Prompting**: Deterministic professional trading rules (DisciplinedCore) live in Rust. Memory (local vector RAG + external agentmemory) grounds every decision.
+- **Selective LLM**: Fast deterministic sub-agents handle most work. LLM is used sparingly and only after gates.
+- **Full Observability**: Every decision produces rich Chain-of-Thought (COT) that is logged, visualised in the TUI, and used for reflection.
+- **Self-Evolution**: High-regret outcomes trigger reflection → lessons → rule adaptation. The system measurably improves over time.
 
-    subgraph "Agent Layer (Tredo Groups) [tredo-autonomous]"
-        subgraph "Identifier [Scanning & Context]"
-            MI[MarketIntelligenceAgent]
-            WS[WatchlistScannerAgent]
-            PC[PivotCalculatorAgent]
-            CS[ConfluenceScorerAgent]
-            PR[PatternRetrieverAgent]
-            ST[SessionTimerAgent]
-            RFC[RedFolderCheckerAgent]
-        end
+### System Layers
 
-        subgraph "Verifier [Risk & Psych Validation]"
-            RP[RiskPsychologyAgent]
-            RC[RiskCalculatorAgent]
-            REF[ReflectorAgent]
-        end
+**UI Layer** (Primary: ratatui TUI, Secondary: Tauri)
+- Real-time COT tree, rules view, portfolio dashboard, agent tree, and trading desk.
+- Keyboard-driven for low-latency desk use.
 
-        subgraph "Executer [Trade Generation]"
-            SD[StrategyDecisionAgent]
-            PM[PortfolioManagerAgent]
-            EXEC[ExecutionCoordinatorAgent]
-        end
+**Orchestration Layer** (`tredo-orchestrator`)
+- Fast loop (5s): Price updates + automatic SL/TP management in paper mode.
+- Medium loop (5m): Full pipeline (Market Intelligence → Debate → Decision → Risk → Execution).
+- Slow loop (24h or on-demand): Reflection + MetaControl rule adaptation.
 
-        subgraph "Guardian [Account Safeguards]"
-            DM[DrawdownMonitorAgent]
-            OP[OvertradingPreventerAgent]
-            OL[OutcomeLoggerAgent]
-        end
-        MC[MetaControlAgent\nRule Adjustment]
-    end
+**Agent Layer** (`tredo-autonomous`)
+- **Identifier** group: Market scanning, intelligence, patterns, pivots, confluence, session timing.
+- **Verifier** group: Risk, psychology, reflection.
+- **Executer** group: Strategy decision (debate-driven), portfolio management, execution coordination.
+- **Guardian** group: Drawdown monitoring, overtrading prevention, outcome logging.
+- **MetaControl**: Learns from regret and mutates rules.
 
-    subgraph "Core Layer [tredo-core]"
-        DC[DisciplinedCore\nRule Enforcement + apply_trained_memory_to_rules]
-        SK[AgentSkill Trait\nPluggable 'how' (Sentiment, Vol, TrainedMemorySkill, ...)]
-        MEM[Memory Store\nredb + Hierarchical Vector (RAG+) + agentmemory]
-        LLM[LLM Executor\nOllama + Claude + Gemini adapters]
-        KRON[Kronos Client\nForecast Service]
-        PAT[Candlestick Patterns\n15 Detectors]
-    end
+**Core Layer** (`tredo-core`)
+- `DisciplinedCore`: Hard Rust gates (pivots, trend, confluence, position sizing, drawdown, session rules).
+- `AgentSkill` trait: Pluggable deterministic capabilities (sentiment, volatility, regime, on-chain proxy, correlation, trained memory recall).
+- Layered memory: redb (hot state), VectorMemory + embeddings (semantic recall), SQLite episode store (regret + history), agentmemory (long-term shared).
+- LLM executor (Ollama primary), Kronos client (forecast sidecar with graceful fallback), pattern detectors, paper execution engine.
 
-    subgraph "External Services"
-        BINANCE[Binance WebSocket\nCrypto Prices]
-        YAHOO[Yahoo Finance\nIndian Stocks]
-        OLLAMA[Ollama LLM\nministral-3]
-        KRONSVC[Kronos Service\nTime Series Forecast]
-        TV[TradingView\nChart Widget]
-    end
+**External Services**
+- Live market data (Binance for crypto, Yahoo for stocks).
+- Ollama (local LLM).
+- Kronos (time-series forecasting service).
+- Optional agentmemory service for cross-session intelligence.
 
-    T --> ORCH
-    ORCH --> FAST & MED & SLOW
-    FAST --> BINANCE & YAHOO
-    MED --> MI & SD & RP
-    SLOW --> REF & MC
-    
-    MI --> PC & CS & ST & PAT
-    SD --> LLM & PR
-    RP --> DM & RFC & OP
-    PM --> MEM
-    EXEC --> DC
-    MC --> DC
-    
-    KRON --> KRONSVC
-    LLM --> OLLAMA
-    T --> TV
-    T --> COT & DASH & TRAD & AI
-    COT --> ORCH
+---
+
+## Memory & Self-Evolution
+
+tredo maintains three tiers of memory that feed directly into decision quality and long-term improvement:
+
+1. **Hot operational state** — redb (portfolio, rules, recent decisions).
+2. **Trained episodic memory** — Vector embeddings of past trades + outcomes for semantic recall ("what did I do last time in similar conditions?").
+3. **Long-term reflective memory** — SQLite journal of every closed trade, regret score, lesson, and rule change. High-regret episodes are summarised and persisted to agentmemory for cross-run learning.
+
+The self-evolving loop is closed and observable:
+- Debate (with skills + memory recall) produces a decision.
+- Paper execution records the outcome.
+- Reflection scores regret and extracts lessons.
+- MetaControl reviews regret clusters and applies rule changes (visible as `RULE_ADAPT` events in COT).
+- Future cycles run under the improved rules and richer recalled context.
+
+---
+
+## Real-Time Paper Crypto Validation
+
+The project ships with a powerful validation harness:
+
+```bash
+./tredo validate --extended --induce-regret
 ```
 
+This runs the full autonomous system against **live Binance data** (no backtesting, no simulation), forces conditions that generate regret, and produces measurable self-evolution data (regret trends, rule tightening, COT evolution).
+
+See `Build.md` for the complete guide on building, running, observing the self-evolving loop, and extending the system.
+
 ---
 
-## 🧭 Data Flow
+## Getting Started
+
+1. Install prerequisites (Rust, optional Ollama + Kronos).
+2. `./tredo build`
+3. `./tredo setup` (creates config with `PAPER_MODE=true` by default).
+4. `source config/tredo.env`
+5. `./tredo tui` (primary interface) or `./tredo validate --extended` for automated real-time paper crypto testing.
+
+Paper trading is the default and strongly recommended until you have extensive validated self-evolution data.
+
+---
+
+## Project Structure
+
+- `crates/tredo-core` — Rules, memory, LLM client, paper engine, skills trait.
+- `crates/tredo-autonomous` — Agent hierarchy, debate, reflection, meta-control, state.
+- `crates/tredo-orchestrator` — Temporal loops and API server.
+- `crates/tredo-tui` — Primary ratatui Terminal UI.
+- `src-tauri` — Secondary desktop UI (Tauri).
+- `kronos_service` — Optional Python time-series forecast sidecar.
+
+Full technical guide: [Build.md](Build.md)
+
+---
+
+## Status & Philosophy
+
+The core "intact" self-evolving system (debate → realistic paper execution → reflection with regret → meta rule adaptation) has been validated with live data.
+
+**Philosophy**: Professional trading discipline must be encoded in deterministic code and memory, not left to prompting. LLMs are powerful tools when used inside a strong, auditable, self-improving framework.
+
+Paper trading + rigorous real-time validation only until the loop proves it compounds improvement over time.
+
+---
+
+## License
+
+MIT. Use at your own risk. This is research and educational software. Paper trading only until you have thoroughly validated the autonomous loop on your own capital and risk parameters.
 
 ```mermaid
 sequenceDiagram

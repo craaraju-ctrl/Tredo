@@ -1,6 +1,8 @@
 # 🗺️ tredo Development Roadmap
 
-> **Trading Real-time Edge Decision Optimisation** — From foundation to a production-grade autonomous co-pilot with first-class Terminal UI.
+**Trading Real-time Edge Decision Optimisation** — From foundation to a production-grade autonomous co-pilot with first-class Terminal UI.
+
+This roadmap reflects the current validated state of the system (real-time paper crypto, intact self-evolving loop) and remaining high-priority work.
 
 ---
 

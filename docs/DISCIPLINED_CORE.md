@@ -1,6 +1,6 @@
 # 🛡️ tredo Disciplined Core Specification
 
-> **The Non-Negotiable Foundation** (Trading Real-time Edge Decision Optimisation) — Professional rules in Rust. The Terminal UI surfaces violations clearly.
+**The Non-Negotiable Foundation** — Professional trading rules encoded in Rust. The Terminal UI makes rule violations and gate decisions fully visible and auditable.
 
 ```mermaid
 flowchart TB

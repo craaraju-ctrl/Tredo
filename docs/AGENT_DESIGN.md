@@ -1,6 +1,8 @@
 # 🧠 tredo Agent Design
 
-> **Trading Real-time Edge Decision Optimisation** — Full Terminal UI + Two-Tier Hierarchical Architecture. Main Agents orchestrate with LLM + debate; Sub-Agents are deterministic.
+**Trading Real-time Edge Decision Optimisation** — Full Terminal UI + Two-Tier Hierarchical Architecture.
+
+Main agents orchestrate with LLM and structured debate. Sub-agents are fast, deterministic, and LLM-free for safety and performance.
 
 ---
 

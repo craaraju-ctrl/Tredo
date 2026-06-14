@@ -77,6 +77,16 @@ pub struct RuleChangeRow {
     pub applied_at: String,
 }
 
+/// Snapshot of a rule change for self-evolution reporting (used by SelfEvolutionValidator).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RuleChangeSnapshot {
+    pub rule_name: String,
+    pub old_value: f64,
+    pub new_value: f64,
+    pub reason: String,
+    pub applied_at: String,
+}
+
 // ── EpisodeStore ───────────────────────────────────────────────────────────
 
 /// Thread-safe SQLite wrapper for persistent trade history.
@@ -395,6 +405,84 @@ impl EpisodeStore {
             |row| row.get::<_, i64>(0),
         )
         .unwrap_or(0) as usize
+    }
+
+    /// Get the most recently closed trade for a symbol (used by SelfEvolutionValidator).
+    pub fn get_most_recent_closed(&self, symbol: &str) -> Result<Option<ClosedEpisode>, rusqlite::Error> {
+        let conn = self
+            .conn
+            .lock()
+            .expect("SQLite connection lock poisoned");
+        let mut stmt = conn.prepare(
+            "SELECT id, symbol, direction, entry_price, exit_price, stop_loss, take_profit,
+                    position_size, pnl, pnl_pct, outcome, exit_reason, regret_score, lesson,
+                    confluence_score, portfolio_heat, market_regime, session, agent_reasoning,
+                    consecutive_losses_at_entry, entry_time, exit_time
+             FROM closed_trades
+             WHERE symbol = ?1
+             ORDER BY exit_time DESC
+             LIMIT 1"
+        )?;
+        let mut rows = stmt.query_map(params![symbol], row_to_episode)?;
+        match rows.next() {
+            Some(Ok(ep)) => Ok(Some(ep)),
+            _ => Ok(None),
+        }
+    }
+
+    /// Get recent rule changes, limited to `limit` entries (used by SelfEvolutionValidator).
+    pub fn get_recent_rule_changes(&self, limit: usize) -> Result<Vec<RuleChangeSnapshot>, rusqlite::Error> {
+        let conn = self
+            .conn
+            .lock()
+            .expect("SQLite connection lock poisoned");
+        let mut stmt = conn.prepare(
+            "SELECT rule_name, old_value, new_value, reason, applied_at
+             FROM rule_changes
+             ORDER BY applied_at DESC
+             LIMIT ?1"
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |row| {
+            Ok(RuleChangeSnapshot {
+                rule_name: row.get(0)?,
+                old_value: row.get(1)?,
+                new_value: row.get(2)?,
+                reason: row.get(3)?,
+                applied_at: row.get(4)?,
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    /// Get all rule changes (used for full report generation).
+    pub fn get_all_rule_changes(&self) -> Result<Vec<RuleChangeSnapshot>, rusqlite::Error> {
+        let conn = self
+            .conn
+            .lock()
+            .expect("SQLite connection lock poisoned");
+        let mut stmt = conn.prepare(
+            "SELECT rule_name, old_value, new_value, reason, applied_at
+             FROM rule_changes
+             ORDER BY applied_at ASC"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(RuleChangeSnapshot {
+                rule_name: row.get(0)?,
+                old_value: row.get(1)?,
+                new_value: row.get(2)?,
+                reason: row.get(3)?,
+                applied_at: row.get(4)?,
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
     }
 
     /// Summary statistics for the frontend or dashboards.

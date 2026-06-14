@@ -1,6 +1,8 @@
 # 🔮 Kronos Forecasting Service
 
-> **Lightweight FastAPI microservice** that exposes the Kronos foundation model as a REST API for the tredo autonomous trading system.
+**Lightweight FastAPI microservice** exposing the Kronos foundation model as a REST API for the tredo trading system.
+
+Kronos supplies short-horizon time-series forecasts that enrich market context and strategy decisions. The service is optional — tredo operates with graceful degradation when it is unavailable.
 
 ---
 

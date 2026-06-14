@@ -20,6 +20,7 @@ pub mod reflector;
 pub mod risk_calculator;
 pub mod risk_psychology;
 pub mod scanner;
+pub mod self_evolution;
 pub mod session_timer;
 pub mod state;
 pub mod strategy_decision;

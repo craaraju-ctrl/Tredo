@@ -1,9 +1,11 @@
 # Agentic Trading Research Report — 2026
 
 **Date:** 2026-06-14  
-**Location:** /Users/varma/Desktop/TREDO/research/  
-**Context:** Research conducted for the TREDO/tredo project (Rust-first hierarchical multi-agent autonomous trading co-pilot). tredo implements many "agentic trading" principles in production-grade form.  
-**Sources:** Web searches (arXiv, GitHub, Medium, industry reports), X semantic posts, GitHub repo details (TradingAgents), academic surveys, product announcements (Robinhood Agentic Trading).  
+**For:** The tredo (TREDO) project — a Rust-first hierarchical multi-agent autonomous trading co-pilot.
+
+This report summarises 2026 research into agentic trading systems. tredo already implements many of the principles identified as critical for safe, production-grade autonomous trading (hierarchical agents, debate, guardrails in code, rich episodic memory, reflection, and self-improvement).
+
+**Sources:** arXiv papers, GitHub projects (including TradingAgents), industry reports, academic surveys, and contemporaneous discussions on agentic AI in finance.  
 
 ---
 

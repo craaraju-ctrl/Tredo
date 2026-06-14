@@ -7,40 +7,34 @@
 
 **Goal of this guide:** Take a clean checkout (or current state) and produce a working, observable, paper-first autonomous system, then evolve it toward a complete "intact" production-grade self-evolving agentic system while staying as pure-Rust as possible.
 
-**Current Reality (validated 2026-06-14, fresh TREDO release):**  
-The core "intact" autonomous agentic system is now validated end-to-end with real-time paper crypto (live Binance on BTC/ETH/SOL, no simulation):
-- Two-tier hierarchy (main LLM-coordinating agents + fast deterministic subs)
-- Four logical groups (Identifier / Verifier / Executer / Guardian) + MetaControl
-- `AgentSkill` trait (pluggable capabilities; all core skills now consistently implement it)
-- `DisciplinedCore` + `apply_trained_memory_to_rules` (Rust-enforced professional trading rules strengthened by learned lessons)
-- Rich `TradingEpisode` model with full reasoning trace + `PostTradeReflection` (regret, lessons, suggested rule changes)
-- Temporal loops (Fast 5s price/SL, Medium 5m full pipeline + debate, Slow 24h reflection/meta)
-- Trained memory recall (local vector RAG + agentmemory long-term) injected into agents so they "remember exactly what they did before"
-- Primary ratatui TUI (COT, rules, positions, agents)
-- Paper execution (with real slippage/risk in core engine; autonomous path integrated)
-- Kronos (short-term forecast sidecar, graceful fallback)
-- agentmemory client for long-term/cross-session intelligence
-- Full self-evolving closed loop validated: Debate (skills + memory) → realistic paper exec → auto deep_reflect + regret → MetaControl (rule adaptation + COT "RULE_ADAPT")
+**Current State (validated June 2026, clean TREDO release)**
 
-**Major items now addressed (post full validation + skills hardening):**
-- Debate fully wired and driving decisions (4-role + aggregator + recall).
-- Reflection/meta loop closed and observable (auto on closes, high-regret triggers rule tightening).
-- Skills layer hardened (consistent AgentSkill impls, richer outputs in progress, wired into MI + debate).
-- Real-time paper crypto harness (`./tredo validate --extended --induce`) for testing self-evo with live data.
-- All previous ATES (now fully rebranded) data, GitHub workflows, build artifacts, and DBs removed for clean new repo.
+The core autonomous agentic system is validated end-to-end using real-time paper trading against live market data:
 
-**Rust Priority Rule (this guide):** (unchanged — still 100% Rust for core)
+- Two-tier agent hierarchy with deterministic sub-agents and LLM-orchestrated main agents.
+- Structured multi-agent debate (Proposer / Critic / Risk / Historian + aggregator) with trained memory injection.
+- Rich episodic memory with regret scoring, reflection, and meta rule adaptation.
+- Full temporal orchestration (fast price/SL monitoring, medium pipeline, slow self-evolution).
+- Professional trading discipline encoded in Rust (`DisciplinedCore`).
+- Real-time paper execution harness that produces observable self-improvement.
 
-Paper trading + rigorous validation only until the intact self-evolving loop is rock-solid (now demonstrable via extended real runs).
+The project is now a fresh, clean repository. All previous naming, workflows, and generated data have been removed.
 
-**Rust Priority Rule (this guide):**
-- Core engine, rules, memory (redb + future LanceDB), episodes, skills, debate, agents/subs, orchestrator loops, TUI, paper/real execution safety, config, logging, COT, notifier → **100% Rust**.
-- Justified non-Rust gaps (only these):
-  - **Kronos forecast service**: Python + Hugging Face Chronos-Bolt (mature ecosystem for this specific time-series model; ~1.2GB RAM, 100-500ms). Rust client already exists with graceful fallback. Do **not** move this into Rust unless you replace the model with a pure-Rust equivalent.
-  - Tauri desktop frontend (Rust + minimal JS/HTML) — secondary UI only. TUI remains primary.
-- Do **not** introduce LangGraph/CrewAI/Python agent runtimes for core logic. Use them only for rapid prototyping of debate flows if you want, then port back to Rust traits/orchestrator.
+**Rust Priority**
 
-Paper trading + rigorous validation only until the intact self-evolving loop (reflection → memory → measurable adaptation) is rock-solid.
+Core components (engine, rules, memory, episodes, skills, debate, agents, orchestrator, TUI, paper execution, COT, logging) are 100% Rust.
+
+The only justified non-Rust component is the Kronos forecast sidecar (Python + Hugging Face Chronos-Bolt for mature time-series forecasting). The Rust client provides graceful fallback.
+
+**Current Capabilities (Validated)**
+
+- Live Binance data for crypto (prices, multi-timeframe, on-chain proxies).
+- Debate-driven decisions grounded in rules + skills + semantic memory recall.
+- Automatic post-trade reflection and regret analysis.
+- Meta-level rule adaptation with full audit trail in COT.
+- Powerful `./tredo validate --extended` harness for inducing and observing self-evolution in real paper conditions.
+
+Paper trading and rigorous real-time validation remain the default until the self-improving loop has demonstrated consistent, measurable improvement across many market regimes.
 
 ---
 

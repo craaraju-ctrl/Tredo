@@ -1,13 +1,14 @@
-# tredo Frontend Test Runbook (Chrome Browser) — Full Features + Agent-Driven Trades & Debug
+# tredo Frontend Test Runbook (Chrome Browser)
 
-**Focus of this version:**  
-Test **everything in the Chrome browser** using the rich vanilla JS frontend served by the orchestrator.  
+**Purpose:** Validate the full feature set and agent-driven paper trading flow using the vanilla JavaScript frontend served by the orchestrator.
 
-**Core testing philosophy:**  
-1. Start the orchestrator (the "tredo agent" backend).  
-2. Open Chrome to the served UI.  
-3. **Let the tredo agent do the work** — click RUN SYSTEM and watch the autonomous loops (fast/medium/slow) drive real paper trades using the full hierarchy, debate, skills, trained memory, and disciplined rules.  
-4. Use the browser as your primary debugging and observability surface to inspect, trigger, and verify every feature — especially the new **Strong Skills + Rules + Trained Memory** layer.
+**Recommended approach:**
+1. Start the orchestrator.
+2. Open the served UI in Chrome.
+3. Allow the autonomous system to operate (trigger full pipeline runs).
+4. Use the browser UI as the primary observability surface for COT, debate, positions, and agent state.
+
+All interactions use the real backend in paper mode. No mocks.
 
 The browser UI (served at the orchestrator's root) is a full-featured trading desk + agent observability console with:
 - Dashboard with live edge scores, debate summaries, risk/guardian views, live COT snippets

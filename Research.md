@@ -1,14 +1,17 @@
-# research.md — Deep Research: tredo (TREDO) Autonomous Trading Co-Pilot — Best Language, Architecture Skeleton, Framework & Memory (2026)
+# Research Overview: tredo (TREDO) — Language, Architecture, Framework & Memory
 
-**Conducted / Updated:** June 13, 2026  
-**Scope:** Exhaustive analysis after reading **every relevant source file** in the TREDO/tredo workspace (all .rs in crates/tredo-{core,autonomous,agents,orchestrator,tui}, src-tauri, all docs/*.md, all Cargo.toml, kronos_service/*.py + requirements + README, scripts (move_files.py, symlink.py), .github/*, .grok/*, tauri configs/frontend JS, episode/DB schemas via code + inspection, redb/sqlite usage, partial .redb content via structure, etc.). External deep research via current 2026 sources on languages for trading/agents, vector/embedded memory systems, multi-agent debate/hierarchical architectures, rules-as-code in finance AI, ratatui TUIs, safe autonomous quant systems.  
-**Primary Goal of this Research:** Identify and document the **best language + architecture skeleton + framework + memory system** for achieving a production-grade, safe, low-resource, memory-driven, hierarchical multi-agent autonomous trading co-pilot (the explicit mission of tredo). Current implementation is analyzed as a strong prototype; recommendations synthesize code reality + 2026 best practices.
+**Date:** 2026-06-14  
+**Project:** tredo (TREDO) — Rust-first hierarchical multi-agent autonomous trading co-pilot.
+
+This document summarises the research and codebase audit that informed the design of tredo. It captures the rationale for a Rust-first approach, the chosen architecture, memory strategy, and alignment with 2026 best practices in agentic systems.
+
+All historical references to prior naming have been cleaned for the fresh TREDO repository. The technical content remains valuable for understanding the system's foundation.
 
 ---
 
 ## Executive Summary (After Full Codebase Audit + External Research)
 
-**tredo** (folder TREDO, rebrand in progress from "TREDO") is a sophisticated **Rust-first, paper-trading-only autonomous trading co-pilot**. Core philosophy (repeated across README, AGENT_DESIGN.md, DISCIPLINED_CORE.md, ROADMAP.md, code comments): **"Rules + Memory > Pure Prompting"**.
+**tredo** (folder TREDO, fresh TREDO repository from "TREDO") is a sophisticated **Rust-first, paper-trading-only autonomous trading co-pilot**. Core philosophy (repeated across README, AGENT_DESIGN.md, DISCIPLINED_CORE.md, ROADMAP.md, code comments): **"Rules + Memory > Pure Prompting"**.
 
 **Current Architecture (from reading every file):**
 - **Language:** Rust (edition 2021, stable toolchain with rustfmt/clippy) + Tokio for async. Workspace with 7 members. Strong use of Arc<RwLock<SharedState>>, async-trait, serde_json for episodes.

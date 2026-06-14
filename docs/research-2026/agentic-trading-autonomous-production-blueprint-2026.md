@@ -1,10 +1,15 @@
-# Autonomous Agentic Trading Production Blueprint — 2026 (Expanded Research)
+# Autonomous Agentic Trading Production Blueprint — 2026
 
 **Date:** 2026-06-14  
-**For:** TREDO/tredo project team  
-**Scope:** Building a true **autonomous agentic trading system** (not a bot or single/simple agent) from scratch through to production for **stocks, crypto, and all markets** (equities, FX, futures, options, digital assets, multi-asset portfolios/correlations).  
-**Philosophy (reinforced):** "Rules + Memory + Debate > Pure Prompting or Simple Automation". Full closed-loop autonomy with self-improvement, but ironclad deterministic safety.  
-**Sources:** Extended 2026 web/academic/GitHub/X research (arXiv surveys, TradingAgents full code, QuantReplay/ABIDES/PyMarketSim/FinRL-Meta simulators, Alpaca MCP, Nautilus Trader, guardrails literature, production failure patterns, broker APIs). Cross-referenced with existing tredo codebase (hierarchical groups, episodes, DisciplinedCore, temporal loops, paper execution stubs, backtester stub, skills, agentmemory client).
+**For:** The tredo (TREDO) project team.
+
+This blueprint outlines a path from foundation to a true production-grade autonomous agentic trading system (not a simple bot) for stocks, crypto, and multi-asset markets.
+
+**Core Philosophy:** "Rules + Memory + Debate > Pure Prompting". Closed-loop autonomy with self-improvement, backed by ironclad deterministic safety in code.
+
+The content is cross-referenced with tredo's existing strengths (hierarchical agents, episodes with regret, DisciplinedCore, temporal loops, skills, and agentmemory integration). It serves as guidance for continued rigorous development on the clean TREDO codebase.
+
+**Note:** This is supporting research. Not financial advice. Production autonomous trading systems carry significant risk and regulatory considerations.
 
 **Important:** This is research to inform safe building. **Not financial advice.** Production autonomous systems carry extreme risk and regulatory exposure.
 
