@@ -1,8 +1,11 @@
 [package]
 name = "tredo-tauri"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "tredo — Trading Real-time Edge Decision Optimisation (Tauri secondary UI, paper-only)"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
 
 [dependencies]
 tauri = { version = "2", features = ["devtools"] }

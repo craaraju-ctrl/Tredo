@@ -1,9 +1,11 @@
 [package]
 name = "tredo-tui"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "tredo — Full Terminal UI (ratatui) for Trading Real-time Edge Decision Optimisation. The primary beautiful interface for the autonomous co-pilot."
-license = "MIT"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
 
 [dependencies]
 ratatui = "0.29"

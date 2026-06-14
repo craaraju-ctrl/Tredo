@@ -1,8 +1,11 @@
 [package]
 name = "tredo-agents"
-version = "0.1.0"
+version.workspace = true
 description = "tredo-agents (DEPRECATED SHIM — do not use for new work. Real implementation lives in tredo-autonomous + tredo-core. Kept only for backward compatibility in orchestrator.)"
-edition = "2021"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
 
 [dependencies]
 tredo-core = { path = "../tredo-core" }

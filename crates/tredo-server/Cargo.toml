@@ -1,8 +1,11 @@
 [package]
 name = "tredo-server"
-version = "0.1.0"
+version.workspace = true
 description = "tredo-server (optional production server)"
-edition = "2021"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
 
 [dependencies]
 tredo-core = { path = "../tredo-core" }
