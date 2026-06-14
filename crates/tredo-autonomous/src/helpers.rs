@@ -213,8 +213,10 @@ fn compute_ema(bars: &[OhlcvBar], period: usize) -> f64 {
     ema
 }
 
-/// Autonomous level calculator: agent decides entry, SL, TP from context + indicators
-/// No external price points provided.
+/// Autonomous level calculator: the *agent* decides entry, SL, TP from its own analysis.
+/// No external price points are ever injected here.
+/// The AggregatedSignal (cross-skill consensus) is now a first-class input so the agent
+/// actually listens to the combined voice of its own skills instead of ignoring them.
 pub fn compute_autonomous_levels(
     symbol: &str,
     current_price: f64,
@@ -225,38 +227,59 @@ pub fn compute_autonomous_levels(
     macd_hist: f64,
     atr_pct: f64,
     rules: &DisciplineRules,
+    aggregated_signal: Option<&tredo_core::AggregatedSignal>,
 ) -> (f64, f64, f64, f64) {  // entry, sl, tp, rr
     let mut direction = tredo_core::TradeDirection::Long;
     let mut entry = current_price;
 
-    // Decide direction from indicators (agentic)
-    if rsi > 70.0 || (regime == crate::types::MarketRegime::TrendingBear && macd_hist < 0.0) {
-        direction = tredo_core::TradeDirection::Short;
-    } else if rsi < 30.0 || (regime == crate::types::MarketRegime::TrendingBull && macd_hist > 0.0) {
-        direction = tredo_core::TradeDirection::Long;
+    // === RESPECT THE AGGREGATED SIGNAL (Gap 1 fix) ===
+    // The agent now lets the combined skill consensus (AggregatedSignal) have real
+    // influence on direction and level selection, instead of treating skills as
+    // decorative COT output only.
+    let mut agg_bias: f64 = 0.0;
+    if let Some(agg) = aggregated_signal {
+        if agg.is_bullish(None) {
+            agg_bias = agg.net_signal.abs().min(0.6);
+            direction = tredo_core::TradeDirection::Long;
+        } else if agg.is_bearish(None) {
+            agg_bias = -agg.net_signal.abs().min(0.6);
+            direction = tredo_core::TradeDirection::Short;
+        }
     }
 
-    // Entry near current or breakout
+    // Decide / adjust direction from indicators + aggregated consensus (true agentic fusion)
+    if agg_bias == 0.0 {
+        if rsi > 70.0 || (regime == crate::types::MarketRegime::TrendingBear && macd_hist < 0.0) {
+            direction = tredo_core::TradeDirection::Short;
+        } else if rsi < 30.0 || (regime == crate::types::MarketRegime::TrendingBull && macd_hist > 0.0) {
+            direction = tredo_core::TradeDirection::Long;
+        }
+    }
+
+    // Entry near current or breakout, biased by aggregated conviction
+    let breakout_buffer = 0.001 + (agg_bias.abs() * 0.003);
     entry = if direction == tredo_core::TradeDirection::Long {
-        current_price.max(pivots.pivot * 1.001)  // slight breakout
+        current_price.max(pivots.pivot * (1.0 + breakout_buffer))
     } else {
-        current_price.min(pivots.pivot * 0.999)
+        current_price.min(pivots.pivot * (1.0 - breakout_buffer))
     };
 
-    // SL using ATR + pivot support (agent identifies protection level)
+    // SL using ATR + pivot support (agent identifies protection level), tightened/loosened by agg conviction
     let atr = current_price * atr_pct.max(0.01);
+    let sl_multiplier = 1.5 - (agg_bias.abs() * 0.4); // strong consensus → tighter protective stops
     let sl = if direction == tredo_core::TradeDirection::Long {
-        (current_price - atr * 1.5).min(pivots.s1)
+        (current_price - atr * sl_multiplier).min(pivots.s1)
     } else {
-        (current_price + atr * 1.5).max(pivots.r1)
+        (current_price + atr * sl_multiplier).max(pivots.r1)
     };
 
-    // TP: 2:1 or 3:1 RR or next pivot target (agentic target based on structure)
+    // TP: risk/reward or next structure target, expanded when aggregated signal is strong
     let risk = (entry - sl).abs();
+    let rr_multiplier = 2.0 + (agg_bias.abs() * 1.0); // strong consensus → more ambitious targets
     let tp = if direction == tredo_core::TradeDirection::Long {
-        entry + risk * 2.0
+        entry + risk * rr_multiplier
     } else {
-        entry - risk * 2.0
+        entry - risk * rr_multiplier
     };
 
     let rr = if risk > 0.0 { risk / (tp - entry).abs().max(0.0001) } else { 1.0 };
@@ -316,4 +339,63 @@ pub fn signal_quality_check(signal: &TradeSignal, rules: &DisciplineRules) -> (b
     }
 
     (passed, reasons)
+}
+
+// === Extended metric calculators for MarketMetricsMeter tool (local, agentic) ===
+
+pub fn compute_atr(bars: &[OhlcvBar], period: usize) -> f64 {
+    if bars.len() < period + 1 {
+        return bars.last().map(|b| (b.high - b.low).abs()).unwrap_or(0.0);
+    }
+    let mut trs: Vec<f64> = vec![];
+    for i in 1..bars.len() {
+        let tr = (bars[i].high - bars[i].low)
+            .max((bars[i].high - bars[i - 1].close).abs())
+            .max((bars[i].low - bars[i - 1].close).abs());
+        trs.push(tr);
+    }
+    // Wilder's smoothing approx (simple avg for last period)
+    let start = trs.len().saturating_sub(period);
+    let sum: f64 = trs[start..].iter().sum();
+    sum / period as f64
+}
+
+pub fn compute_bollinger_bands(bars: &[OhlcvBar], period: usize, stddev: f64) -> (f64, f64, f64) {
+    if bars.len() < period {
+        let p = bars.last().map(|b| b.close).unwrap_or(0.0);
+        return (p * 1.02, p, p * 0.98);
+    }
+    let closes: Vec<f64> = bars.iter().rev().take(period).map(|b| b.close).collect();
+    let mean = closes.iter().sum::<f64>() / closes.len() as f64;
+    let var = closes.iter().map(|c| (c - mean).powi(2)).sum::<f64>() / closes.len() as f64;
+    let sd = var.sqrt() * stddev;
+    (mean + sd, mean, mean - sd)
+}
+
+pub fn compute_stochastic(bars: &[OhlcvBar], period: usize) -> f64 {
+    if bars.len() < period + 1 {
+        return 50.0;
+    }
+    let recent = &bars[bars.len() - period..];
+    let high = recent.iter().map(|b| b.high).fold(f64::MIN, f64::max);
+    let low = recent.iter().map(|b| b.low).fold(f64::MAX, f64::min);
+    let close = bars.last().unwrap().close;
+    if high == low { return 50.0; }
+    ((close - low) / (high - low) * 100.0).clamp(0.0, 100.0)
+}
+
+pub fn compute_relative_volume(bars: &[OhlcvBar]) -> f64 {
+    if bars.len() < 10 {
+        return 1.0;
+    }
+    let vols: Vec<f64> = bars.iter().map(|b| b.volume).collect();
+    let avg: f64 = vols.iter().take(vols.len() - 1).sum::<f64>() / (vols.len() - 1) as f64;
+    if avg <= 0.0 { return 1.0; }
+    (vols.last().copied().unwrap_or(avg) / avg).clamp(0.3, 3.0)
+}
+
+// Simple fib retracements helper (used by meter for levels awareness; agent still decides actual SL/TP)
+pub fn compute_fib_levels(high: f64, low: f64) -> (f64, f64) {
+    let rng = (high - low).max(0.0001);
+    (high - rng * 0.382, high - rng * 0.618)
 }

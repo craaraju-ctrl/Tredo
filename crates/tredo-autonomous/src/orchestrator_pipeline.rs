@@ -254,12 +254,20 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
             });
         }
 
-        // ── EXECUTER GROUP ───────────────────────────────────────────────────
-        // The agent (StrategyDecision) now decides *everything* autonomously:
-        // direction + exact entry/SL/TP based on its analysis of indicators it computed (RSI, MACD, volume, patterns, pivots, ATR, regime, memory).
-        // We only pass the symbol and the price it observed in the market.
+        // === EXPLICIT AGGREGATOR + DECISION HANDOFF (Gap 1 blueprint) ===
+        // 1. MarketIntelligence has already run and stored last_aggregated_signal + last_skill_votes.
+        // 2. We now pull the AggregatedSignal and pass it as a first-class parameter into the decision layer.
+        // This is the critical missing link that turns "skills thinking aloud" into the agent actually
+        // using its own cross-skill consensus when choosing to trade and at what levels.
+        let aggregated_signal = {
+            let agg = self.state.last_aggregated_signal.read().await;
+            agg.clone()
+        };
+
+        // The agent decides direction + its own entry/SL/TP using the aggregated signal.
+        // We deliberately do *not* pass pre-computed entry/stop/target from the orchestrator.
         let signal_opt = tredo
-            .run_executer(symbol, observed_price)
+            .run_executer_with_aggregation(symbol, observed_price, aggregated_signal.as_ref())
             .await?;
 
         match &signal_opt {

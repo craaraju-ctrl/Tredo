@@ -1044,7 +1044,7 @@ async fn get_crypto_market(
 
 async fn get_news() -> impl axum::response::IntoResponse {
     let client = reqwest::Client::new();
-    let fetcher = tredo_core::NewsFetcher::new(client);
+    let fetcher = tredo_core::NewsFetcher::new(client, state.config.clone());  // free news APIs + keys (research: Alpha Vantage, Finnhub etc.)
     // Fetch for a default symbol; in prod could take query param for active symbol
     let items = fetcher.fetch_headlines("NIFTY").await.unwrap_or_default();
     Json(serde_json::json!({ "symbol": "NIFTY", "items": items }))

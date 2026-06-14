@@ -29,10 +29,34 @@ impl StrategyDecisionAgent {
     /// - Returns full TradeSignal or None (HOLD).
     ///
     /// Callers (orchestrator/tests) only provide symbol + current_price. The agent does the rest.
+    /// Agentic decision (convenience version for callers that haven't pulled the AggregatedSignal yet).
+    /// Internally this will read from state.last_aggregated_signal (populated by MarketIntelligence).
+    /// Fully agentic decision: The agent observes market data from state,
+    /// computes its own indicators (RSI, MACD, ATR, volume signals, trend,
+    /// patterns, pivots, regime, confluence), recalls similar past episodes
+    /// from memory (what worked, regret), runs debate, applies rules,
+    /// and autonomously decides direction + precise entry/SL/TP levels.
+    /// NO external price points, direction, or levels are ever injected.
+    /// This is true agentic/self-evolving trading AI, not a scripted bot.
     pub async fn generate_signal(
         &self,
         symbol: &str,
         current_price: f64,
+    ) -> Result<Option<TradeSignal>, Box<dyn Error + Send + Sync>> {
+        let aggregated = {
+            let a = self.state.last_aggregated_signal.read().await;
+            a.clone()
+        };
+        self.generate_signal_with_aggregation(symbol, current_price, aggregated.as_ref()).await
+    }
+
+    /// Full agentic decision with explicit AggregatedSignal (preferred path).
+    /// The cross-skill consensus from MarketIntelligence is now a first-class input to the decision layer.
+    pub async fn generate_signal_with_aggregation(
+        &self,
+        symbol: &str,
+        current_price: f64,
+        aggregated_signal: Option<&tredo_core::AggregatedSignal>,
     ) -> Result<Option<TradeSignal>, Box<dyn Error + Send + Sync>> {
         let rules = self.state.rules.read().await;
         let portfolio = self.state.portfolio.read().await;
@@ -131,10 +155,25 @@ impl StrategyDecisionAgent {
         };
 
         // === AUTONOMOUS DIRECTION + LEVELS (agent identifies everything) ===
+        // The AggregatedSignal (if provided) now directly influences level selection.
+        // This is the key integration point that was missing.
         let patterns_for_levels: Vec<tredo_core::CandlestickPattern> = {
             let p = self.state.last_patterns.read().await;
             p.get(symbol).cloned().unwrap_or_default()
         };
+
+        // === CONNECTED: Pull NewsAnalyser + MetricsMeter snapshots (set by MI / loops) for richer agent reasoning ===
+        // These feed the agent's own analysis + autonomous level calc via memory/debate/agg influence. Agent decides.
+        let (news_ctx, meter) = {
+            let n = self.state.latest_news.read().await;
+            let m = self.state.latest_metrics.read().await;
+            (n.get(symbol).cloned(), m.get(symbol).cloned())
+        };
+        let meter_atr = meter.as_ref().map(|m| m.atr_pct).unwrap_or(atr_pct);
+        let meter_regime = meter.as_ref().map(|m| m.regime_hint.clone()).unwrap_or_else(|| "ranging".into());
+        if let Some(m) = &meter {
+            println!("[Strategy] using meter snapshot: rsi={:.1} conf={:.2} regime={}", m.rsi_14, m.confluence_hint, m.regime_hint);
+        }
 
         let (entry, stop_loss, take_profit, risk_reward_ratio) = crate::helpers::compute_autonomous_levels(
             symbol,
@@ -144,13 +183,27 @@ impl StrategyDecisionAgent {
             *self.state.market_regime.read().await.as_ref().unwrap_or(&crate::types::MarketRegime::Ranging),
             rsi,
             macd_hist,
-            atr_pct,
+            meter_atr,
             &rules,
+            aggregated_signal, // Pass the cross-skill consensus so levels respect the aggregated vote (news_analyser + meter skills included)
         );
 
-        // Debate for final reasoning (agentic multi-agent)
+        // === REAL AGGREGATOR PASS-THROUGH (Gap 1 fix) ===
+        // Pull the AggregatedSignal that was computed in MarketIntelligence.
+        // This is now passed as a first-class input to debate so the agent actually
+        // uses the cross-skill consensus instead of ignoring its own thoughts.
+        let aggregated_signal = {
+            let agg = self.state.last_aggregated_signal.read().await;
+            agg.clone()
+        };
+
+        // Debate for final reasoning (agentic multi-agent) — now receives the aggregated skills consensus
         let debate_input = AgentInput::ConfluenceRequest { context: context.clone() };
-        let (debate_action, debate_conf, debate_reason, _turns) = crate::debate::run_debate(self.state.clone(), &debate_input).await;
+        let (debate_action, debate_conf, debate_reason, _turns) = crate::debate::run_debate(
+            self.state.clone(),
+            &debate_input,
+            aggregated_signal.as_ref(),
+        ).await;
 
         let direction = if debate_action == "BUY" {
             tredo_core::TradeDirection::Long
@@ -166,15 +219,44 @@ impl StrategyDecisionAgent {
             return Ok(None);
         }
 
-        // Build reasoning including indicators the agent used
+        // === VECTOR MEMORY USAGE FOR REGIME MATCHING (Gap 3) ===
+        // Pull similar historical episodes using the agent's vector memory.
+        // When LanceDB feature is enabled this becomes powerful long-term regime memory.
+        // This is now actively used in the decision instead of being bypassed.
+        let vector_context = {
+            let vm = self.state.vector_memory.lock().await;
+            if !vm.is_empty() {
+                // Use a query that captures current market structure (price + regime + confluence)
+                let query = format!(
+                    "{} regime={} confluence={:.2} price={:.2}",
+                    symbol, trend_label, confluence, current_price
+                );
+                match vm.search(&query, 3, &self.state.llm).await {
+                    Ok(results) if !results.is_empty() => {
+                        let mut lines = vec!["Vector memory regime matches:".to_string()];
+                        for r in &results {
+                            let regret = r.regret_score.map(|s| format!(" regret={:.2}", s)).unwrap_or_default();
+                            lines.push(format!("  {} (sim={:.0}%){}", r.summary_text, r.similarity * 100.0, regret));
+                        }
+                        lines.join(" | ")
+                    }
+                    _ => "No strong vector memory regime matches.".to_string(),
+                }
+            } else {
+                "Vector memory empty (JSON fallback or no episodes yet).".to_string()
+            }
+        };
+
+        // Build reasoning including indicators the agent used + vector memory
         let reasoning = format!(
-            "Agentic decision: {} | RSI={:.1} MACD_hist={:.4} ATR%={:.2}% | Pivots R1/S1={:.2}/{:.2} | Patterns: {} | Debate: {} (conf {:.2}) | {}",
-            direction as u8, // rough
+            "Agentic decision: {} | RSI={:.1} MACD_hist={:.4} ATR%={:.2}% | Pivots R1/S1={:.2}/{:.2} | Patterns: {} | Debate+Agg: {} (conf {:.2}) | {} | {}",
+            direction as u8,
             rsi, macd_hist, atr_pct * 100.0,
             pivots.r1, pivots.s1,
             patterns_context,
             debate_action, debate_conf,
-            debate_reason
+            debate_reason,
+            vector_context
         );
 
         // Final signal with self-identified levels

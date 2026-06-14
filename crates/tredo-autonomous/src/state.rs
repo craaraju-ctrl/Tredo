@@ -117,6 +117,10 @@ pub struct SharedState {
     /// The aggregated signal from skills (produced by SkillAggregator in MI).
     /// Now wired into strategy decision for real use of ensemble (previously only in COT).
     pub last_aggregated_signal: Arc<RwLock<Option<tredo_core::AggregatedSignal>>>,
+
+    /// Latest rich metrics snapshot per symbol from MarketMetricsMeter tool (RSI/MACD/ATR/BB/Stoch/vol/regime/fib/confluence).
+    /// Connected to pipeline, debate, strategy (autonomous levels), aggregator (via skill), memory recall, WS price updates.
+    pub latest_metrics: Arc<RwLock<HashMap<String, crate::market_metrics_meter::MetricsSnapshot>>>,
 }
 
 impl SharedState {
@@ -191,6 +195,7 @@ impl SharedState {
             episode_store,
             last_skill_votes: Arc::new(RwLock::new(Vec::new())),
             last_aggregated_signal: Arc::new(RwLock::new(None)),
+            latest_metrics: Arc::new(RwLock::new(HashMap::new())),
             update_tx: Arc::new(update_tx),
         })
     }

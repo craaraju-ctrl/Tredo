@@ -30,6 +30,13 @@ pub struct Config {
 
     // === News ===
     pub newsapi_key: String,
+    pub alpha_vantage_key: String,
+    pub finnhub_key: String,
+    pub marketaux_key: String,
+
+    // === More free/fremium APIs (research 2026: Polygon for aggs+indicators, FRED for macro metrics, CoinGecko keyless/public for crypto) ===
+    pub polygon_api_key: String,
+    pub fred_api_key: String,
 
     // Paper enforcement (set by launcher/setup)
     pub paper_mode: bool,
@@ -70,6 +77,12 @@ impl Default for Config {
                 .unwrap_or(8082),
 
             newsapi_key: std::env::var("NEWSAPI_KEY").unwrap_or_default(),
+            alpha_vantage_key: std::env::var("ALPHA_VANTAGE_KEY").unwrap_or_default(),
+            finnhub_key: std::env::var("FINNHUB_KEY").unwrap_or_default(),
+            marketaux_key: std::env::var("MARKETAUX_KEY").unwrap_or_default(),
+
+            polygon_api_key: std::env::var("POLYGON_API_KEY").unwrap_or_default(),
+            fred_api_key: std::env::var("FRED_API_KEY").unwrap_or_default(),
 
             paper_mode: std::env::var("PAPER_MODE")
                 .map(|v| v != "false")

@@ -54,17 +54,31 @@ impl MarketIntelligenceAgent {
             .fetch_onchain(symbol)
             .await;
 
+        // === NEW: NewsAnalyser (multi-API integrated tool) + MarketMetricsMeter (rich metrics tool) ===
+        // These are first-class connected tools: feed latest_news + latest_metrics, contribute to SkillAggregator via AgentSkill,
+        // used by debate/strategy for autonomous decision (no injected prices), persisted for vector/episode memory recall + self-evolution.
+        let news_score = crate::news_analyser::NewsAnalyser::new(self.state.clone())
+            .analyze_and_store(symbol)
+            .await;
+        let metrics_snap = crate::market_metrics_meter::MarketMetricsMeter::new(self.state.clone())
+            .compute_and_store(symbol, price)
+            .await;
+
         // Include trained recall in the analysis for smarter, memory-grounded confluence.
         println!("[MI smarter] {}\n(trained memory used for self-understanding and long-term improvement)", trained_recall);
 
         // Boost confluence with new signals (research: multi-factor like TradingAgents)
+        // Now includes news_analyser (real multi-API) + meter (RSI/MACD/ATR/BB etc + confluence_hint)
+        let meter_conf = metrics_snap.confluence_hint;
         let extra_score = (sentiment - 0.5) * 0.12
             + (if expansion { 0.08 } else { 0.0 })
             + (corr - 0.5) * 0.08
-            + (onchain - 0.5) * 0.10;
+            + (onchain - 0.5) * 0.10
+            + (news_score - 0.5) * 0.11
+            + (meter_conf - 0.5) * 0.13;
         println!(
-            "[MI UPGRADE] {} sentiment={:.2} vol_exp={:?} regime={:?} corr={:.2} onchain={:.2} extra={:.2}",
-            symbol, sentiment, expansion, regime, corr, onchain, extra_score
+            "[MI UPGRADE] {} sentiment={:.2} vol_exp={:?} regime={:?} corr={:.2} onchain={:.2} news_analyser={:.2} meter_conf={:.2} extra={:.2} (NewsAnalyser+MetricsMeter connected)",
+            symbol, sentiment, expansion, regime, corr, onchain, news_score, meter_conf, extra_score
         );
 
         let rules = self.state.rules.read().await;

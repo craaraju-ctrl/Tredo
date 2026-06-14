@@ -375,21 +375,34 @@ impl Tredo {
     /// Run the Executer group autonomously.
     /// The agent (StrategyDecision) identifies direction + entry/SL/TP itself from indicators (RSI, MACD, patterns, volume, pivots, regime, etc.).
     /// No external price points or direction are provided — this is what makes it agentic AI, not a bot.
+    /// Pure agentic entry point (no aggregated signal provided from caller).
     pub async fn run_executer(
         &self,
         symbol: &str,
         current_price: f64,
     ) -> Result<Option<TradeSignal>, Box<dyn Error + Send + Sync>> {
+        self.run_executer_with_aggregation(symbol, current_price, None).await
+    }
+
+    /// Agentic entry point that accepts the AggregatedSignal computed by MarketIntelligence.
+    /// This is the correct pattern: skills are aggregated first, then the consensus is
+    /// handed to the decision layer so the agent actually listens to its own thoughts.
+    pub async fn run_executer_with_aggregation(
+        &self,
+        symbol: &str,
+        current_price: f64,
+        aggregated_signal: Option<&tredo_core::AggregatedSignal>,
+    ) -> Result<Option<TradeSignal>, Box<dyn Error + Send + Sync>> {
         println!(
-            "[Tredo::Executer] Agent making fully autonomous decision for {} @ current {:.2}",
+            "[Tredo::Executer] Agent making fully autonomous decision for {} @ current {:.2} (using aggregated skills consensus)",
             symbol, current_price
         );
 
-        // Agent decides everything (levels + direction) using its skills, debate, memory, rules.
+        // The agent decides direction + its own entry/SL/TP. AggregatedSignal is now a first-class input.
         let signal_opt = self
             .executer
             .strategy
-            .generate_signal(symbol, current_price)
+            .generate_signal_with_aggregation(symbol, current_price, aggregated_signal)
             .await?;
 
         match &signal_opt {

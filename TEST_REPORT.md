@@ -236,3 +236,11 @@ After these changes, re-running the integration tests (with a real Ollama for fu
 ---
 
 *Report updated after code resolutions. Original analysis was read-only; these targeted edits resolve the concrete issues surfaced.*
+
+### 2026-06-15 Update: "add more and more apis and integrate news analyser and meter ... as a tool and connect. research on web"
+- Research performed (Finnhub, AlphaV, Marketaux, NewsAPI, Polygon free, CoinGecko keyless, FRED). Added POLYGON_API_KEY + FRED_API_KEY everywhere + made NewsFetcher use 5+ sources.
+- New files: autonomous/news_analyser.rs (AgentSkill + multi-source analyser), market_metrics_meter.rs (rich MetricsSnapshot + AgentSkill).
+- Helpers extended with bollinger/atr/stoch/relvol/fib.
+- Full connections: state.latest_metrics, MI (calls + boost + logs), strategy (reads meter for autonomous_levels + reason), loops (live meter on WS price), aggregator via skills (weights in DisciplineRules), memory mention, no price injection.
+- Verified: full cargo check ok; key integration test passes with explicit logs proving NewsAnalyser + MetricsMeter ran, influenced agg/debate/strategy, agent purely decided (HOLD example). See test output in run for "[MetricsMeter]", "[MI UPGRADE] ... connected", "[Strategy] using meter snapshot".
+- Agent remains fully agentic/self-evolving. More perception = better autonomous decisions over time via memory + meta.

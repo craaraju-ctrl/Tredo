@@ -47,7 +47,12 @@ run_setup() {
 
   echo; log "=== Broker / News ==="
   read -p "Binance Key (paper OK): " BINANCE_API_KEY; read -p "Binance Secret: " -s BINANCE_API_SECRET; echo
-  read -p "NewsAPI key (optional): " NEWSAPI_KEY
+  read -p "NewsAPI key (optional, free dev tier for headlines): " NEWSAPI_KEY
+  read -p "Alpha Vantage key (optional, free tier for news + 50+ technical indicators): " ALPHA_VANTAGE_KEY
+  read -p "Finnhub key (optional, generous free tier: news, sentiment, precomp technicals, WS): " FINNHUB_KEY
+  read -p "Marketaux key (optional, free ~100/day finance news + sentiment scores): " MARKETAUX_KEY
+  read -p "Polygon key (optional, free tier aggs + indicators for stocks/crypto meter): " POLYGON_API_KEY
+  read -p "FRED key (optional, free St.Louis Fed macro for regime/metrics context): " FRED_API_KEY
 
   echo; log "=== WhatsApp + Telegram ==="
   read -p "Telegram Bot Token: " TELEGRAM_BOT_TOKEN; read -p "Telegram Chat ID: " TELEGRAM_CHAT_ID
@@ -70,6 +75,11 @@ CLAUDE_API_KEY=${CLAUDE_API_KEY:-}
 BINANCE_API_KEY=${BINANCE_API_KEY:-}
 BINANCE_API_SECRET=${BINANCE_API_SECRET:-}
 NEWSAPI_KEY=${NEWSAPI_KEY:-}
+ALPHA_VANTAGE_KEY=${ALPHA_VANTAGE_KEY:-}
+FINNHUB_KEY=${FINNHUB_KEY:-}
+MARKETAUX_KEY=${MARKETAUX_KEY:-}
+POLYGON_API_KEY=${POLYGON_API_KEY:-}
+FRED_API_KEY=${FRED_API_KEY:-}
 TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
 TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
 WHATSAPP_SID=${WHATSAPP_SID:-}
@@ -94,6 +104,11 @@ CLAUDE_API_KEY=${CLAUDE_API_KEY:-}
 BINANCE_API_KEY=${BINANCE_API_KEY:-DUMMY}
 BINANCE_API_SECRET=${BINANCE_API_SECRET:-DUMMY}
 NEWSAPI_KEY=${NEWSAPI_KEY:-}
+ALPHA_VANTAGE_KEY=${ALPHA_VANTAGE_KEY:-}
+FINNHUB_KEY=${FINNHUB_KEY:-}
+MARKETAUX_KEY=${MARKETAUX_KEY:-}
+POLYGON_API_KEY=${POLYGON_API_KEY:-}
+FRED_API_KEY=${FRED_API_KEY:-}
 TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
 TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
 WHATSAPP_SID=${WHATSAPP_SID:-}

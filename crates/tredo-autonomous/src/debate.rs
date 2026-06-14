@@ -262,6 +262,7 @@ impl HistorianAgent {
 pub async fn run_debate(
     state: SharedState,
     input: &AgentInput,
+    aggregated_signal: Option<&tredo_core::AggregatedSignal>,
 ) -> (String, f64, String, Vec<DebateTurn>) {
     let proposer = ProposerAgent::new(state.clone());
     let critic = CriticAgent::new(state.clone());
@@ -275,7 +276,9 @@ pub async fn run_debate(
 
     let turns = vec![prop.clone(), crit.clone(), rsk.clone(), hist.clone()];
 
-    // Enhanced aggregator (weighted + trained intel from vector/agentmemory via Hist)
+    // === REAL AGGREGATOR INTEGRATION (Gap 1 fix) ===
+    // The AggregatedSignal from MarketIntelligence (skills consensus) is now a first-class
+    // citizen in debate. This closes the "thinking aloud but ignoring its own thoughts" problem.
     let mut buy_score = 0.0;
     if prop.action == "BUY" {
         buy_score += prop.confidence * 0.25;
@@ -294,27 +297,44 @@ pub async fn run_debate(
         buy_score += 0.10;
     }
 
-    let (final_action, conf, reason) = if buy_score > 0.60 && rsk.action == "PASS" {
+    // Strongly weight the cross-skill aggregated consensus when available.
+    // This is the key integration (Gap 1) — the agent now actually listens to its own aggregated skill consensus.
+    if let Some(agg) = aggregated_signal {
+        let before = buy_score;
+        if agg.is_bullish(None) {
+            buy_score += (agg.net_signal.abs() * 0.35).min(0.35);
+        } else if agg.is_bearish(None) {
+            buy_score -= (agg.net_signal.abs() * 0.35).min(0.35);
+        }
+        buy_score += (agg.conviction - 0.3).max(0.0) * 0.2;
+
+        let delta = buy_score - before;
+        if delta.abs() > 0.005 {
+            println!("[Debate] AggregatedSignal influenced buy_score by {:+.3} (net={:+.2}, conviction={:.0}%) → new score {:.2}",
+                     delta, agg.net_signal, agg.conviction * 100.0, buy_score);
+        }
+    }
+
+    let (final_action, conf, reason) = if buy_score > 0.55 && rsk.action == "PASS" {
         (
             "BUY".to_string(),
             buy_score,
             format!(
-                "Debate aggregated: Prop={} Crit={} Risk={} Hist-trained. Score={:.2}",
+                "Debate + AggregatedSignal: Prop={} Crit={} Risk={} Hist-trained. Score={:.2}",
                 prop.action, crit.action, rsk.action, buy_score
             ),
         )
-    } else if buy_score < 0.30 || rsk.action == "BLOCK" {
+    } else if buy_score < 0.25 || rsk.action == "BLOCK" {
         (
             "HOLD".to_string(),
             0.85,
-            "Debate consensus (trained data + risk): high risk or low conviction from history"
-                .to_string(),
+            "Debate + AggregatedSignal consensus (trained data + risk + skills): high risk or low conviction".to_string(),
         )
     } else {
         (
             "HOLD".to_string(),
             0.65,
-            "Debate: mixed signals from agents + trained episodes, escalate to HOLD".to_string(),
+            "Debate + AggregatedSignal: mixed signals from skills + agents + trained episodes, escalate to HOLD".to_string(),
         )
     };
 

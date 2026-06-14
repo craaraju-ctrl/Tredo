@@ -39,23 +39,192 @@ impl NewsContext {
     }
 }
 
-/// Fetches news headlines using free public RSS feeds.
-/// Primary source: Google News RSS (no API key required).
+/// Fetches news headlines using free public RSS feeds + multiple free key APIs researched 2026.
+/// Priority (to respect rate limits + get sentiment where available): 
+/// Finnhub (news + sentiment), Marketaux (sentiment scores), NewsAPI, Alpha Vantage (NEWS_SENTIMENT), 
+/// CoinGecko (crypto market data as "headlines" proxy for meter synergy), then Google RSS fallback.
+/// Keys from config (POLYGON/FRED added for meter elsewhere; CoinGecko often keyless).
 pub struct NewsFetcher {
     client: reqwest::Client,
+    config: crate::config::Config,  // for API keys (free tiers from research: Alpha Vantage, Finnhub, Marketaux, NewsAPI etc.)
 }
 
 impl NewsFetcher {
-    pub fn new(client: reqwest::Client) -> Self {
-        Self { client }
+    pub fn new(client: reqwest::Client, config: crate::config::Config) -> Self {
+        Self { client, config }
     }
 
-    /// Fetch news headlines for a given symbol via Google News RSS.
-    /// Returns up to 8 headlines.
+    /// Fetch news headlines for a given symbol.
+    /// Tries key APIs first (more structured, often with sentiment), falls back to RSS.
+    /// Returns up to 10 unique headlines. Enriches summary context for analyser.
     pub async fn fetch_headlines(
         &self,
         symbol: &str,
     ) -> Result<Vec<NewsItem>, Box<dyn std::error::Error + Send + Sync>> {
+        let mut items: Vec<NewsItem> = Vec::new();
+
+        // 1. Finnhub (free generous; company-news or general /news; sentiment via separate or included)
+        if !self.config.finnhub_key.is_empty() {
+            if let Ok(mut fin) = self.try_finnhub(symbol).await {
+                items.append(&mut fin);
+            }
+        }
+
+        // 2. Marketaux (free ~100/day; excellent sentiment scores in response)
+        if !self.config.marketaux_key.is_empty() && items.len() < 6 {
+            if let Ok(mut ma) = self.try_marketaux(symbol).await {
+                items.append(&mut ma);
+            }
+        }
+
+        // 3. NewsAPI (free dev 100/day)
+        if !self.config.newsapi_key.is_empty() && items.len() < 7 {
+            if let Ok(mut na) = self.try_newsapi(symbol).await {
+                items.append(&mut na);
+            }
+        }
+
+        // 4. Alpha Vantage NEWS_SENTIMENT (free but tight 25/day; great for meter synergy)
+        if !self.config.alpha_vantage_key.is_empty() && items.len() < 8 {
+            if let Ok(mut av) = self.try_alphavantage_news(symbol).await {
+                items.append(&mut av);
+            }
+        }
+
+        // 5. CoinGecko (keyless or demo; crypto market "news" via description + vol for symbols like BTC)
+        if items.len() < 6 && (symbol == "BTC" || symbol == "ETH" || symbol == "SOL" || symbol.to_lowercase().contains("coin")) {
+            if let Ok(mut cg) = self.try_coingecko(symbol).await {
+                items.append(&mut cg);
+            }
+        }
+
+        // 6. RSS fallback (always works, Google News)
+        if items.len() < 5 {
+            if let Ok(mut rss) = self.fetch_rss_headlines(symbol).await {
+                items.append(&mut rss);
+            }
+        }
+
+        // Dedup by title (simple)
+        items.sort_by(|a, b| b.published_at.cmp(&a.published_at));
+        let mut seen = std::collections::HashSet::new();
+        items.retain(|i| seen.insert(i.title.clone()));
+        Ok(items.into_iter().take(10).collect())
+    }
+
+    async fn try_finnhub(&self, symbol: &str) -> Result<Vec<NewsItem>, Box<dyn std::error::Error + Send + Sync>> {
+        // Finnhub /company-news or /news ; use last 2 days. Token in query.
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let from = (chrono::Utc::now() - chrono::Duration::days(2)).format("%Y-%m-%d").to_string();
+        let sym = if symbol.len() <= 5 { symbol } else { symbol }; // tickers or crypto like BINANCE:BTCUSDT but simple
+        let url = format!(
+            "https://finnhub.io/api/v1/company-news?symbol={}&from={}&to={}&token={}",
+            sym, from, today, self.config.finnhub_key
+        );
+        let resp = self.client.get(&url).timeout(std::time::Duration::from_secs(6)).send().await?;
+        if !resp.status().is_success() { return Ok(vec![]); }
+        let v: serde_json::Value = resp.json().await.unwrap_or(serde_json::json!([]));
+        let mut out = vec![];
+        if let Some(arr) = v.as_array() {
+            for it in arr.iter().take(6) {
+                let title = it.get("headline").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                if title.is_empty() { continue; }
+                let src = it.get("source").and_then(|x| x.as_str()).unwrap_or("Finnhub").to_string();
+                let url = it.get("url").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                out.push(NewsItem { title, source: src, published_at: None, url });
+            }
+        }
+        Ok(out)
+    }
+
+    async fn try_marketaux(&self, symbol: &str) -> Result<Vec<NewsItem>, Box<dyn std::error::Error + Send + Sync>> {
+        let tick = match symbol { "BTC" => "BTC", "ETH" => "ETH", "NIFTY" => "NIFTY50", _ => symbol };
+        let url = format!(
+            "https://api.marketaux.com/v1/news/all?api_token={}&symbols={}&filter_entities=true&limit=8&language=en",
+            self.config.marketaux_key, tick
+        );
+        let resp = self.client.get(&url).timeout(std::time::Duration::from_secs(7)).send().await?;
+        if !resp.status().is_success() { return Ok(vec![]); }
+        let v: serde_json::Value = resp.json().await.unwrap_or(serde_json::json!({}));
+        let mut out = vec![];
+        if let Some(data) = v.get("data").and_then(|d| d.as_array()) {
+            for it in data.iter().take(6) {
+                let title = it.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                if title.is_empty() { continue; }
+                let src = it.get("source").and_then(|x| x.as_str()).unwrap_or("Marketaux").to_string();
+                let u = it.get("url").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                // If sentiment present in entity or overall, we can note in future NewsItem extension; for now title carries signal
+                out.push(NewsItem { title, source: src, published_at: None, url: u });
+            }
+        }
+        Ok(out)
+    }
+
+    async fn try_newsapi(&self, symbol: &str) -> Result<Vec<NewsItem>, Box<dyn std::error::Error + Send + Sync>> {
+        let q = format!("{}+stock+OR+{}+finance", symbol, symbol);
+        let url = format!(
+            "https://newsapi.org/v2/everything?q={}&sortBy=publishedAt&pageSize=6&apiKey={}",
+            q, self.config.newsapi_key
+        );
+        let resp = self.client.get(&url).timeout(std::time::Duration::from_secs(6)).send().await?;
+        if !resp.status().is_success() { return Ok(vec![]); }
+        let v: serde_json::Value = resp.json().await.unwrap_or(serde_json::json!({}));
+        let mut out = vec![];
+        if let Some(arts) = v.get("articles").and_then(|a| a.as_array()) {
+            for a in arts.iter().take(5) {
+                let title = a.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                if title.is_empty() || title == "[Removed]" { continue; }
+                let src = a.get("source").and_then(|s| s.get("name")).and_then(|x| x.as_str()).unwrap_or("NewsAPI").to_string();
+                let u = a.get("url").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                out.push(NewsItem { title, source: src, published_at: None, url: u });
+            }
+        }
+        Ok(out)
+    }
+
+    async fn try_alphavantage_news(&self, symbol: &str) -> Result<Vec<NewsItem>, Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers={}&apikey={}&limit=6",
+            symbol, self.config.alpha_vantage_key
+        );
+        let resp = self.client.get(&url).timeout(std::time::Duration::from_secs(6)).send().await?;
+        if !resp.status().is_success() { return Ok(vec![]); }
+        let v: serde_json::Value = resp.json().await.unwrap_or(serde_json::json!({}));
+        let mut out = vec![];
+        if let Some(feed) = v.get("feed").and_then(|f| f.as_array()) {
+            for it in feed.iter().take(5) {
+                let title = it.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                if title.is_empty() { continue; }
+                let src = it.get("source").and_then(|x| x.as_str()).unwrap_or("AlphaVantage").to_string();
+                let u = it.get("url").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                out.push(NewsItem { title, source: src, published_at: None, url: u });
+            }
+        }
+        Ok(out)
+    }
+
+    async fn try_coingecko(&self, symbol: &str) -> Result<Vec<NewsItem>, Box<dyn std::error::Error + Send + Sync>> {
+        // Keyless public CoinGecko for crypto "market pulse" as proxy headlines (volume, description changes)
+        let id = match symbol { "BTC" => "bitcoin", "ETH" => "ethereum", "SOL" => "solana", _ => "bitcoin" };
+        let url = format!("https://api.coingecko.com/api/v3/coins/{}?localization=false&tickers=false&market_data=true&community_data=false", id);
+        let resp = self.client.get(&url).timeout(std::time::Duration::from_secs(5)).send().await?;
+        if !resp.status().is_success() { return Ok(vec![]); }
+        let v: serde_json::Value = resp.json().await.unwrap_or(serde_json::json!({}));
+        let mut out = vec![];
+        if let Some(name) = v.get("name").and_then(|x| x.as_str()) {
+            let default_md = serde_json::json!({});
+            let md = v.get("market_data").unwrap_or(&default_md);
+            let vol = md.get("total_volume").and_then(|x| x.get("usd")).and_then(|x| x.as_f64()).unwrap_or(0.0);
+            let price = md.get("current_price").and_then(|x| x.get("usd")).and_then(|x| x.as_f64()).unwrap_or(0.0);
+            let ch = md.get("price_change_percentage_24h").and_then(|x| x.as_f64()).unwrap_or(0.0);
+            let title = format!("{} market: ${:.0} vol ${:.0} 24h {:.1}% (CoinGecko)", name, price, vol, ch);
+            out.push(NewsItem { title, source: "CoinGecko".to_string(), published_at: None, url: format!("https://www.coingecko.com/en/coins/{}", id) });
+        }
+        Ok(out)
+    }
+
+    /// Original RSS only path (used as fallback).
+    async fn fetch_rss_headlines(&self, symbol: &str) -> Result<Vec<NewsItem>, Box<dyn std::error::Error + Send + Sync>> {
         let search_query = match symbol {
             "BTC" => "Bitcoin+OR+%24BTC",
             "ETH" => "Ethereum+OR+%24ETH",

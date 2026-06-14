@@ -45,6 +45,9 @@ impl Default for DisciplineRules {
         skill_weights.insert("CorrelationChecker".to_string(), 0.10);
         skill_weights.insert("OnChainData".to_string(), 0.15);
         skill_weights.insert("TrainedMemorySkill".to_string(), 0.20);
+        // New integrated tools (NewsAnalyser + MarketMetricsMeter) — connected to aggregator + memory + decision
+        skill_weights.insert("NewsAnalyser".to_string(), 0.28);
+        skill_weights.insert("MarketMetricsMeter".to_string(), 0.25);
 
         Self {
             use_daily_pivots: true,
