@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "tredo",
+  "version": "0.1.0",
+  "identifier": "com.tredo.trading",
+  "build": {
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "",
+    "devUrl": null,
+    "frontendDist": "./frontend"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "tredo — Trading Real-time Edge Decision Optimisation",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.png"
+    ]
+  }
+}

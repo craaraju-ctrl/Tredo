@@ -1,0 +1,1180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>tredo — Trading Real-time Edge Decision Optimisation</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+</head>
+<body>
+<div id="app" class="app-container">
+
+  <!-- ═══════════════════════════════════════════════════════
+       TOP NAVBAR
+       ═══════════════════════════════════════════════════════ -->
+  <header class="app-topbar">
+    <div class="topbar-left">
+      <div class="brand">
+        <span class="brand-logo">⚡</span>
+        <span class="brand-text">tredo</span>
+        <span class="brand-version">v0.7</span>
+      </div>
+    </div>
+    <!-- mini-ticker removed as requested; page navigation is now the horizontal top tabs -->
+    <div class="topbar-right">
+      <div class="balance-badge">
+        <i class="fas fa-wallet"></i>
+        <span class="bal-label">Balance</span>
+        <span class="bal-val" id="margin-balance">₹100,000.00</span>
+      </div>
+      <span id="brk-badge" class="brk-badge paper">📄 PAPER</span>
+      <button id="btn-run" class="run-btn stopped" onclick="Tredo.System.toggle()">
+        <span class="run-dot"></span>
+        <span class="run-label">RUN SYSTEM</span>
+      </button>
+      <div class="status-indicator">
+        <span class="status-dot online" id="status-dot"></span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Horizontal page navigation buttons at the very top (as requested) -->
+  <div class="top-page-nav">
+    <button class="nav-btn active" data-page="dashboard" onclick="Tredo.Router.go('dashboard')">
+      <i class="fas fa-th-large"></i><span>Dashboard</span>
+    </button>
+    <button class="nav-btn" data-page="trading" onclick="Tredo.Router.go('trading')">
+      <i class="fas fa-chart-line"></i><span>Trading</span>
+    </button>
+    <button class="nav-btn" data-page="agent" onclick="Tredo.Router.go('agent')">
+      <i class="fas fa-robot"></i><span>Agent</span>
+    </button>
+    <button class="nav-btn" data-page="analysis" onclick="Tredo.Router.go('analysis')">
+      <i class="fas fa-search"></i><span>Analysis</span>
+    </button>
+    <button class="nav-btn" data-page="crypto" onclick="Tredo.Router.go('crypto')">
+      <i class="fab fa-bitcoin"></i><span>Crypto</span>
+    </button>
+    <button class="nav-btn" data-page="stocks" onclick="Tredo.Router.go('stocks')">
+      <i class="fas fa-chart-line"></i><span>Stocks</span>
+    </button>
+    <button class="nav-btn" data-page="settings" onclick="Tredo.Router.go('settings')">
+      <i class="fas fa-cog"></i><span>Settings</span>
+    </button>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       MAIN LAYOUT: Content only (no sidebar)
+       ═══════════════════════════════════════════════════════ -->
+  <div class="app-body">
+
+    <!-- MAIN CONTENT AREA -->
+    <main class="app-content" id="app-content">
+
+      <!-- ══════════════════════════════════════════════════
+           PAGE: DASHBOARD
+           ══════════════════════════════════════════════════ -->
+      <div class="page active" id="page-dashboard">
+        <div class="page-header">
+          <h1>Dashboard</h1>
+          <p class="page-subtitle">Portfolio overview & system health</p>
+        </div>
+
+        <!-- Portfolio Summary Cards -->
+        <div class="dash-grid">
+          <div class="stat-card primary">
+            <div class="stat-icon"><i class="fas fa-coins"></i></div>
+            <div class="stat-body">
+              <span class="stat-label">Total Equity</span>
+              <span class="stat-value" id="dash-equity">₹100,000.00</span>
+              <span class="stat-change success" id="dash-equity-change">+0.00%</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon"><i class="fas fa-hand-holding-usd"></i></div>
+            <div class="stat-body">
+              <span class="stat-label">Cash Balance</span>
+              <span class="stat-value" id="dash-cash">₹100,000.00</span>
+              <span class="stat-detail">Available for trading</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon"><i class="fas fa-chart-pie"></i></div>
+            <div class="stat-body">
+              <span class="stat-label">Open Positions</span>
+              <span class="stat-value" id="dash-positions">0</span>
+              <span class="stat-detail" id="dash-positions-detail">No active trades</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon"><i class="fas fa-percentage"></i></div>
+            <div class="stat-body">
+              <span class="stat-label">Win Rate</span>
+              <span class="stat-value" id="dash-winrate">—</span>
+              <span class="stat-detail">All-time performance</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Middle Row: P&L Chart + System Health -->
+        <div class="dash-row">
+          <div class="dash-panel wide">
+            <div class="panel-head">
+              <h3><i class="fas fa-wave-square"></i> Portfolio P&L</h3>
+              <div class="panel-actions">
+                <span class="pill-switch" id="pnl-period">
+                  <span class="pill-opt active" data-period="1d">1D</span>
+                  <span class="pill-opt" data-period="1w">1W</span>
+                  <span class="pill-opt" data-period="1m">1M</span>
+                </span>
+              </div>
+            </div>
+            <div class="panel-body">
+              <canvas id="pnl-chart-canvas" class="dash-chart-canvas"></canvas>
+            </div>
+          </div>
+          <div class="dash-panel">
+            <div class="panel-head">
+              <h3><i class="fas fa-heartbeat"></i> System Health</h3>
+            </div>
+            <div class="panel-body">
+              <div class="health-list">
+                <div class="health-item"><span class="h-name">Kronos Service</span><span class="h-status ok" id="h-kronos"><i class="fas fa-check-circle"></i> Running</span></div>
+                <div class="health-item"><span class="h-name">Ollama LLM</span><span class="h-status ok" id="h-llm"><i class="fas fa-check-circle"></i> Connected</span></div>
+                <div class="health-item"><span class="h-name">Orchestrator</span><span class="h-status warn" id="h-orch"><i class="fas fa-clock"></i> Standby</span></div>
+                <div class="health-item"><span class="h-name">WebSocket Stream</span><span class="h-status ok" id="h-ws"><i class="fas fa-check-circle"></i> Live</span></div>
+                <div class="health-item"><span class="h-name">Yahoo Finance</span><span class="h-status ok" id="h-yahoo"><i class="fas fa-check-circle"></i> Connected</span></div>
+                <div class="health-item"><span class="h-name">Database (redb)</span><span class="h-status ok" id="h-db"><i class="fas fa-check-circle"></i> Synced</span></div>
+                <div class="health-item"><span class="h-name">Vector Memory</span><span class="h-status" id="h-vector"><i class="fas fa-database"></i> <span id="h-vector-count">0</span> episodes</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- DASHBOARD - Full content re-arranged into separate professional workflow boxes (same style as Agent) -->
+        <div class="agent-workflow-container" style="display: flex; flex-direction: column; gap: 12px; padding: 8px 0;">
+
+          <!-- Box 1: Portfolio Snapshot -->
+          <div class="workflow-box">
+            <div class="wb-header"><i class="fas fa-wallet"></i> Portfolio Snapshot</div>
+            <div class="wb-body" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+              <div class="wb-subbox">
+                <strong>Total Equity</strong><br>
+                <span class="qs-val" id="dash-equity">₹100,000.00</span>
+                <div><span id="dash-equity-change" class="success">+0.00%</span></div>
+              </div>
+              <div class="wb-subbox">
+                <strong>Cash Balance</strong><br>
+                <span class="qs-val" id="dash-cash">₹100,000.00</span>
+              </div>
+              <div class="wb-subbox">
+                <strong>Open Positions</strong><br>
+                <span class="qs-val" id="dash-positions">0</span>
+              </div>
+              <div class="wb-subbox">
+                <strong>Win Rate</strong><br>
+                <span class="qs-val" id="dash-winrate">—</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Box 2: Risk & Discipline (Guardian View) -->
+          <div class="workflow-box">
+            <div class="wb-header"><i class="fas fa-shield-alt"></i> Risk & Discipline (Guardian View)</div>
+            <div class="wb-body" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+              <div class="wb-subbox">
+                <strong>Max Drawdown</strong><br>
+                <span id="qs-dd">0.00%</span>
+                <div class="rb-bar"><div id="risk-dd-bar" style="width:0%"></div></div>
+              </div>
+              <div class="wb-subbox">
+                <strong>Consecutive Losses</strong><br>
+                <span id="qs-conloss">0</span>
+                <div class="rb-bar"><div id="risk-cl-bar" style="width:0%"></div></div>
+              </div>
+              <div class="wb-subbox">
+                <strong>Portfolio Heat</strong><br>
+                <span id="qs-heat">0%</span><br>
+                <span>Trades Today: <span id="qs-trades">0</span></span>
+              </div>
+            </div>
+            <div class="wb-footer">All Guardian checks active. System respects 1% risk / 3% DD rules.</div>
+          </div>
+
+          <!-- Box 3: Live Edge Score & Debate Summary (core tredo feature) -->
+          <div class="workflow-box">
+            <div class="wb-header"><i class="fas fa-brain"></i> Live Edge Score + Debate Summary</div>
+            <div class="wb-body">
+              <div class="dash-edge-bar" style="margin-bottom:8px;">
+                <div class="edge-score">
+                  <span class="edge-label">LIVE EDGE SCORE</span>
+                  <span class="edge-value" id="dash-edge-score">87</span>
+                </div>
+                <div class="edge-breakdown">
+                  <div class="edge-item"><span>Confluence</span><span id="edge-conf">92%</span></div>
+                  <div class="edge-item"><span>Debate</span><span id="edge-debate">78%</span></div>
+                  <div class="edge-item"><span>Kronos</span><span id="edge-kronos">85%</span></div>
+                  <div class="edge-item"><span>Discipline</span><span id="edge-disc">94%</span></div>
+                </div>
+              </div>
+              <div style="font-size:10px;">Latest Debate: <span id="debate-action">HOLD</span> (Score: <span id="debate-score">62%</span>) — Guardian: PASS</div>
+            </div>
+            <div class="wb-footer">
+              <button class="btn btn-sm" onclick="Tredo.COT.loadFromBackend()">Refresh Edge Data</button>
+              <button class="btn btn-sm" onclick="document.querySelector('[data-page=agent]').click()">View Full Debate in Agent</button>
+            </div>
+          </div>
+
+          <!-- Box 4: P&L + Regime + Agent Pulse -->
+          <div class="workflow-box">
+            <div class="wb-header"><i class="fas fa-wave-square"></i> P&L, Regime & Agent Pulse</div>
+            <div class="wb-body" style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px;">
+              <div>
+                <div class="panel-head" style="padding:4px 8px; font-size:11px;"><h3 style="margin:0;"><i class="fas fa-chart-line"></i> Portfolio P&L</h3></div>
+                <canvas id="pnl-chart-canvas" class="dash-chart-canvas" style="height:140px;"></canvas>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <div class="wb-subbox">
+                  <strong>Market Regime</strong><br>
+                  <span id="qs-regime">Neutral</span>
+                </div>
+                <div class="wb-subbox">
+                  <strong>Agent Pulse</strong><br>
+                  <div id="agent-pulse">
+                    <div class="ap-item"><span>Identifier</span><span class="ap-val success">Active</span></div>
+                    <div class="ap-item"><span>Guardian</span><span class="ap-val success">Clear</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Box 5: Recent Trades + Lessons + Live COT -->
+          <div class="workflow-box">
+            <div class="wb-header"><i class="fas fa-receipt"></i> Recent Trades + Lessons + Live COT</div>
+            <div class="wb-body" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div>
+                <table class="dash-table" id="dash-trades-table" style="font-size:10px;">
+                  <thead><tr><th>Time</th><th>Sym</th><th>Dir</th><th>P&L</th><th>Edge</th></tr></thead>
+                  <tbody id="dash-trades-body"><tr><td colspan="5" class="empty-state">No trades yet.</td></tr></tbody>
+                </table>
+              </div>
+              <div>
+                <div class="dash-panel cot-live-card" id="cot-live-card" style="margin:0;">
+                  <div class="panel-head" style="padding:4px 8px;"><h3 style="margin:0;font-size:11px;"><i class="fas fa-brain"></i> Latest AI Decision</h3></div>
+                  <div class="panel-body cot-live-body" id="cot-live-body" style="padding:6px; min-height:60px;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════
+           PAGE: TRADING (REARRANGED inside - Professional Trading Desk + Featurastic AI Edge)
+           ══════════════════════════════════════════════════ -->
+      <div class="page" id="page-trading">
+        <!-- BINANCE-STYLE TRADING DESK: Top symbol header (no duplicate page h1) + 3-col main (Orderbook | Chart | Trade+AI) + bottom tabs -->
+        <div class="trading-symbol-bar">
+          <div class="ts-left">
+            <select id="trading-symbol-select" class="ts-select" onchange="Tredo.Trading.setActiveSymbol && Tredo.Trading.setActiveSymbol(this.value)">
+              <option value="BTC">BTC / USDT</option>
+              <option value="ETH">ETH / USDT</option>
+              <option value="SOL">SOL / USDT</option>
+              <option value="NIFTY">NIFTY</option>
+              <option value="RELIANCE">RELIANCE</option>
+            </select>
+            <span id="ts-price" class="ts-price">—</span>
+            <span id="ts-change" class="ts-change">—</span>
+          </div>
+          <div class="ts-stats">
+            24h H: <span id="ts-h">—</span>
+            L: <span id="ts-l">—</span>
+            Vol: <span id="ts-vol">—</span>
+          </div>
+          <div class="ts-timeframes">
+            <button class="tf-btn active" data-tf="1m" onclick="Tredo.Trading.setTimeframe('1m', this)">1m</button>
+            <button class="tf-btn" data-tf="5m" onclick="Tredo.Trading.setTimeframe('5m', this)">5m</button>
+            <button class="tf-btn" data-tf="15m" onclick="Tredo.Trading.setTimeframe('15m', this)">15m</button>
+            <button class="tf-btn" data-tf="1H" onclick="Tredo.Trading.setTimeframe('1H', this)">1H</button>
+            <button class="tf-btn" data-tf="4H" onclick="Tredo.Trading.setTimeframe('4H', this)">4H</button>
+            <button class="tf-btn" data-tf="1D" onclick="Tredo.Trading.setTimeframe('1D', this)">1D</button>
+          </div>
+          <div class="ts-ai-pill" onclick="document.querySelector('[data-page=agent]').click()">
+            <i class="fas fa-brain"></i> <span id="ts-edge">AI Edge 87</span>
+          </div>
+        </div>
+
+        <!-- 3-COLUMN BINANCE PRO DESK -->
+        <div class="trading-desk">
+          <!-- LEFT: ORDER BOOK (real-time depth simulation, red asks / green bids, depth bars) -->
+          <div class="desk-pane ob-pane">
+            <div class="wb-header ob-hdr"><i class="fas fa-list-ol"></i> Order Book <span id="ob-sym">BTC/USDT</span></div>
+            <div class="wb-body ob-body">
+              <div class="ob-cols">
+                <span>Price</span><span>Size</span><span>Total</span>
+              </div>
+              <div id="ob-asks" class="ob-list asks"></div>
+              <div class="ob-spread">
+                <span id="ob-mid">Mid —</span>
+                <span id="ob-spread">Spread —</span>
+              </div>
+              <div id="ob-bids" class="ob-list bids"></div>
+            </div>
+            <div class="wb-footer">Live synced • depth simulated from tick feed (Binance-style)</div>
+          </div>
+
+          <!-- CENTER: PROMINENT CHART (TradingView + fallbacks + Kronos / regime overlays) -->
+          <div class="desk-pane chart-pane">
+            <div class="chart-toolbar">
+              <span class="ct-title"><i class="fas fa-chart-candlestick"></i> <span id="chart-sym-label">BTC</span></span>
+              <div class="tf-mini">
+                <button class="tf-mini-btn" onclick="Tredo.Trading.toggleOverlay('kronos')">Kronos</button>
+                <button class="tf-mini-btn" onclick="Tredo.Trading.toggleOverlay('pivots')">Pivots</button>
+                <button class="tf-mini-btn" onclick="Tredo.Trading.toggleOverlay('regime')">Regime</button>
+              </div>
+            </div>
+            <div id="tradingview-chart-container" class="chart-inner" style="min-height: 320px; flex:1;">
+              <canvas id="fallback-chart-canvas" class="chart-canvas"></canvas>
+              <div class="chart-overlay-hint" id="kronos-overlay">Kronos: +0.8% bias (5min)</div>
+            </div>
+            <div class="chart-foot">
+              <span>Regime: <strong id="chart-regime">Bullish</strong></span>
+              <span>Confluence: <strong id="chart-conf">91</strong></span>
+              <span>Edge: <strong id="chart-edge">87</strong></span>
+            </div>
+          </div>
+
+          <!-- RIGHT: ORDER FORM + FULL AI EDGE PRE-TRADE ANALYSIS (Binance ticket + tredo brain) -->
+          <div class="desk-pane trade-pane">
+            <div class="wb-header"><i class="fas fa-ticket-alt"></i> Place Order + AI Pre-Trade</div>
+            <div class="wb-body trade-body">
+              <!-- Buy / Sell side selector (Binance style) -->
+              <div class="side-switch">
+                <button class="side-btn buy active" data-side="buy" onclick="Tredo.Trading.setSide('buy', this)">BUY / LONG</button>
+                <button class="side-btn sell" data-side="sell" onclick="Tredo.Trading.setSide('sell', this)">SELL / SHORT</button>
+              </div>
+
+              <div class="otype-row">
+                <label class="otype"><input type="radio" name="ot-type" value="limit" checked onchange="Tredo.Trading.onOrderTypeChange()"> Limit</label>
+                <label class="otype"><input type="radio" name="ot-type" value="market" onchange="Tredo.Trading.onOrderTypeChange()"> Market</label>
+              </div>
+
+              <div class="of-row">
+                <label>Price</label>
+                <div class="of-input-wrap">
+                  <input type="number" id="ot-price" step="0.01" value="67250" oninput="Tredo.Trading.calcTotal()">
+                  <button class="of-btn" onclick="Tredo.Trading.useLastPrice()">Last</button>
+                </div>
+              </div>
+
+              <div class="of-row">
+                <label>Amount</label>
+                <input type="number" id="ot-amount" step="0.0001" value="0.05" oninput="Tredo.Trading.calcTotal()">
+              </div>
+
+              <!-- % of balance quick buttons (Binance classic) -->
+              <div class="pct-row">
+                <button class="pct-btn" data-pct="25" onclick="Tredo.Trading.applyPct(0.25)">25%</button>
+                <button class="pct-btn" data-pct="50" onclick="Tredo.Trading.applyPct(0.50)">50%</button>
+                <button class="pct-btn" data-pct="75" onclick="Tredo.Trading.applyPct(0.75)">75%</button>
+                <button class="pct-btn" data-pct="100" onclick="Tredo.Trading.applyPct(1.00)">100%</button>
+              </div>
+
+              <div class="of-row total">
+                <label>Total</label>
+                <span id="ot-total">3,362.50</span> <small>USDT</small>
+              </div>
+
+              <div class="bal-line">Available: <span id="ot-avail">100,000.00</span> <span>USDT</span> <span id="ot-pos-hint"></span></div>
+
+              <!-- AI EDGE PRE-TRADE ANALYSIS (core upgrade: edge, debate, kronos, guardian, memory, one-click apply) -->
+              <div class="ai-pretrade">
+                <div class="ai-pre-head">
+                  <i class="fas fa-brain"></i> AI Edge Pre-Trade Analysis
+                  <span class="ai-edge-badge" id="ai-edge-badge">87</span>
+                </div>
+                <div class="ai-metrics-grid">
+                  <div class="ai-m"><span>Confluence</span><strong id="ai-conf">92</strong></div>
+                  <div class="ai-m"><span>Debate</span><strong id="ai-debate">BULL 81</strong></div>
+                  <div class="ai-m"><span>Kronos</span><strong id="ai-kronos">+1.4%</strong></div>
+                  <div class="ai-m"><span>Guardian</span><strong id="ai-guard" class="ok">PASS</strong></div>
+                  <div class="ai-m"><span>Memory</span><strong id="ai-mem">0.82</strong></div>
+                  <div class="ai-m"><span>Risk</span><strong id="ai-risk">0.9%</strong></div>
+                </div>
+                <div class="ai-reco" id="ai-reco">High edge. Debate consensus LONG. Apply size 1.0% of equity. Kronos supports continuation.</div>
+                <div class="ai-actions">
+                  <button class="btn btn-sm ai-apply" onclick="Tredo.Trading.applyAIPreTrade()">Apply AI Reco</button>
+                  <button class="btn btn-sm" onclick="document.querySelector('[data-page=agent]').click()">Open Debate</button>
+                  <button class="btn btn-sm" onclick="Tredo.Trading.runPreTradeGuardian()">Guardian Check</button>
+                </div>
+              </div>
+
+              <!-- EXECUTE (paper via backend, respects discipline) -->
+              <button id="btn-place-big" class="btn btn-block place-btn buy" onclick="Tredo.Trading.placeOrderFromDesk()">BUY / LONG — EXECUTE WITH AI</button>
+              <div class="ot-note">Paper only • Full AI + Discipline enforced • Matches Binance ticket UX</div>
+            </div>
+            <div class="wb-footer">
+              <button class="btn btn-sm" id="btn-trigger-cycle" onclick="Tredo.System.triggerCycle && Tredo.System.triggerCycle()">Trigger Full Agent Cycle</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- BOTTOM: TABBED PANELS (Positions / Open Orders / Trade History / Recent Trades) Binance style -->
+        <div class="trading-bottom">
+          <div class="bottom-tabbar">
+            <button class="bt-tab active" data-btab="positions" onclick="Tredo.Trading.switchBottomTab('positions', this)">Positions</button>
+            <button class="bt-tab" data-btab="openorders" onclick="Tredo.Trading.switchBottomTab('openorders', this)">Open Orders</button>
+            <button class="bt-tab" data-btab="history" onclick="Tredo.Trading.switchBottomTab('history', this)">Trade History</button>
+            <button class="bt-tab" data-btab="recent" onclick="Tredo.Trading.switchBottomTab('recent', this)">Recent Trades</button>
+          </div>
+          <div class="bottom-tab-body" id="bottom-tab-body">
+            <!-- Populated dynamically by JS: tables for positions (with close), orders, history etc. Real data from State + backend -->
+          </div>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════
+           PAGE: AGENT
+           ══════════════════════════════════════════════════ -->
+      <div class="page" id="page-agent">
+        <div class="page-header">
+          <h1>Agent</h1>
+          <p class="page-subtitle">Full Agent Workflow • Entire Tredo Decision Process in Separate Boxes</p>
+        </div>
+
+        <!-- ENTIRE AGENT WORKFLOW - Displayed as separate professional boxes -->
+        <div class="agent-workflow-container" style="display: flex; flex-direction: column; gap: 12px; padding: 8px 0;">
+
+          <!-- Box 1: Top Level Orchestrator & Temporal Loops -->
+          <div class="workflow-box">
+            <div class="wb-header"><i class="fas fa-sitemap"></i> Tredo Main Orchestrator & Temporal Loops</div>
+            <div class="wb-body" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+              <div class="wb-subbox">
+                <strong>Fast Loop (5s)</strong><br>
+                <span class="wb-status success">Active</span> - Price updates, SL/TP management, basic scans
+              </div>
+              <div class="wb-subbox">
+                <strong>Medium Loop (5m)</strong><br>
+                <span class="wb-status success">Active</span> - Full pipeline: Identifier → Verifier → Executer
+              </div>
+              <div class="wb-subbox">
+                <strong>Slow Loop (24h)</strong><br>
+                <span class="wb-status">Scheduled</span> - Reflection, MetaControl, rule optimisation
+              </div>
+            </div>
+            <div class="wb-footer">Live COT &amp; state driven by backend orchestrator. <button class="btn btn-sm" onclick="Tredo.COT.loadFromBackend()">Refresh Workflow</button></div>
+          </div>
+
+          <!-- Box 2: Identifier Group -->
+          <div class="workflow-box">
+            <div class="wb-header"><i class="fas fa-search"></i> 1. Identifier Group (Market Scanning &amp; Context)</div>
+            <div class="wb-body" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px;">
+              <div class="wb-subbox">
+                <strong>WatchlistScannerAgent</strong><br>
+                Scans active symbols for opportunities. Status: Scanning
+              </div>
+              <div class="wb-subbox">
+                <strong>MarketIntelligenceAgent</strong><br>
+                Kronos forecast + skills (sentiment, volatility, regime, correlation, on-chain)
+              </div>
+              <div class="wb-subbox">
+                <strong>PivotCalculatorAgent</strong><br>
+                Calculates support/resistance levels
+              </div>
+              <div class="wb-subbox">
+                <strong>ConfluenceScorerAgent</strong><br>
+                Scores multi-factor confluence (0-100)
+              </div>
+              <div class="wb-subbox">
+                <strong>PatternRetrieverAgent</strong><br>
+                Detects candlestick &amp; MTF patterns
+              </div>
+              <div class="wb-subbox">
+                <strong>SessionTimer + RedFolderChecker</strong><br>
+                Time &amp; news event guards
+              </div>
+            </div>
+            <div class="wb-footer">Output: MarketContext + Confluence Score + Patterns → feeds Verifier</div>
+          </div>
+
+          <!-- Box 3: Verifier Group -->
+          <div class="workflow-box">
+            <div class="wb-header"><i class="fas fa-balance-scale"></i> 2. Verifier Group (Risk, Psychology &amp; Discipline)</div>
+            <div class="wb-body" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px;">
+              <div class="wb-subbox">
+                <strong>RiskPsychologyAgent</strong><br>
+                Trader heat, consecutive losses, psychology check
+              </div>
+              <div class="wb-subbox">
+                <strong>RiskCalculatorAgent</strong><br>
+                Position sizing, R:R calculation (1% risk rule)
+              </div>
+              <div class="wb-subbox">
+                <strong>ReflectorAgent</strong><br>
+                LLM self-reflection before final decision
+              </div>
+              <div class="wb-subbox" style="grid-column: span 3;">
+                <strong>Disciplined Core Checks</strong><br>
+                Max DD, Consecutive Losses, Red Folder, Session Timing, Min Confluence
+              </div>
+            </div>
+            <div class="wb-footer">Output: Risk Analysis + PASS/BLOCK decision → feeds Executer only on PASS</div>
+          </div>
+
+          <!-- Box 4: Executer Group + Debate -->
+          <div class="workflow-box">
+            <div class="wb-header"><i class="fas fa-bolt"></i> 3. Executer Group (Decision &amp; Execution)</div>
+            <div class="wb-body" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <div class="wb-subbox">
+                <strong>StrategyDecisionAgent</strong><br>
+                Final BUY/SELL/HOLD using debate or LLM. Current: Debate mode (conf &gt; 0.7)
+              </div>
+              <div class="wb-subbox">
+                <strong>PortfolioManager + ExecutionCoordinator</strong><br>
+                Position sizing, paper order placement, accounting
+              </div>
+              <!-- Debate as dedicated sub box -->
+              <div class="wb-subbox" style="grid-column: span 2;">
+                <strong>Multi-Agent Debate (Proposer / Critic / Risk / Historian)</strong><br>
+                <div style="display:flex; gap:8px; margin-top:6px;">
+                  <div style="flex:1; background:#111; padding:4px; border-radius:3px; font-size:10px;">
+                    <strong>Proposer:</strong> Bullish bias using skills
+                  </div>
+                  <div style="flex:1; background:#111; padding:4px; border-radius:3px; font-size:10px;">
+                    <strong>Critic:</strong> CAUTION on correlation / fakeouts
+                  </div>
+                  <div style="flex:1; background:#111; padding:4px; border-radius:3px; font-size:10px;">
+                    <strong>Risk:</strong> BLOCK on high vol / expansion
+                  </div>
+                  <div style="flex:1; background:#111; padding:4px; border-radius:3px; font-size:10px;">
+                    <strong>Historian:</strong> Memory match + regret scoring
+                  </div>
+                </div>
+                <div style="margin-top:4px; font-size:10px;">Aggregated Buy Score: <span id="debate-score" style="font-weight:600;">—</span> | Final Action: <span id="debate-action" style="font-weight:600;">—</span></div>
+              </div>
+            </div>
+            <div class="wb-footer">Output: TradeSignal with full reasoning → Guardian validation</div>
+          </div>
+
+          <!-- Box 5: Guardian Group -->
+          <div class="workflow-box">
+            <div class="wb-header"><i class="fas fa-shield-alt"></i> 4. Guardian Group (Safety &amp; Logging)</div>
+            <div class="wb-body" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+              <div class="wb-subbox">
+                <strong>DrawdownMonitorAgent</strong><br>
+                Enforces daily max drawdown (default 3%)
+              </div>
+              <div class="wb-subbox">
+                <strong>OvertradingPreventerAgent</strong><br>
+                Limits trades per day, prevents revenge trading
+              </div>
+              <div class="wb-subbox">
+                <strong>OutcomeLoggerAgent</strong><br>
+                Records closed episodes, regret, lessons into SQLite
+              </div>
+            </div>
+            <div class="wb-footer">Every execution is double-checked. High-regret episodes trigger MetaControl.</div>
+          </div>
+
+          <!-- Box 6: Reflection, Memory &amp; Meta -->
+          <div class="workflow-box">
+            <div class="wb-header"><i class="fas fa-lightbulb"></i> 5. Reflection, Memory &amp; Meta-Control</div>
+            <div class="wb-body" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <div class="wb-subbox">
+                <strong>ReflectorAgent</strong><br>
+                Post-trade LLM reflection: "What went wrong/right?"
+              </div>
+              <div class="wb-subbox">
+                <strong>MetaControlAgent</strong><br>
+                Weekly review of high-regret episodes → proposes rule changes
+              </div>
+              <div class="wb-subbox">
+                <strong>Episode Store + Vector Memory</strong><br>
+                Stores closed trades + semantic similarity search for similar setups
+              </div>
+              <div class="wb-subbox">
+                <strong>Live Workflow COT</strong><br>
+                <div id="agent-workflow-cot" style="font-size:10px; max-height:80px; overflow:auto; background:#0a0e14; padding:4px;"></div>
+              </div>
+            </div>
+            <div class="wb-footer">The system learns. Rules evolve autonomously. Full history available for human review.</div>
+          </div>
+
+          <!-- Box 7: Full Live COT Tree (integrated from existing) -->
+          <div class="workflow-box">
+            <div class="wb-header"><i class="fas fa-stream"></i> Complete Live Chain-of-Thought (Full Workflow Trace)</div>
+            <div class="wb-body p-0">
+              <div class="ai-timeline" id="ai-timeline" style="max-height: 220px; overflow: auto; padding: 8px;"></div>
+            </div>
+            <div class="wb-footer">Every stage above produces COT steps. Expand nodes for input/output/reasoning.</div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════
+           PAGE: CRYPTO EXCHANGES
+           ══════════════════════════════════════════════════ -->
+      <div class="page" id="page-crypto">
+        <div class="page-header">
+          <h1><i class="fab fa-bitcoin" style="color:var(--warn)"></i> Crypto Markets</h1>
+          <p class="page-subtitle">Live prices across Binance · Coinbase · Kraken · CoinGecko</p>
+        </div>
+
+        <!-- Exchange Selector + Filter Bar -->
+        <div class="crypto-toolbar">
+          <div class="crypto-exchanges" id="crypto-exchanges">
+            <button class="exch-btn active" data-exch="binance" onclick="Tredo.Crypto.setExchange('binance')">
+              <span class="exch-dot" style="background:#f0b90b"></span>Binance
+            </button>
+            <button class="exch-btn" data-exch="coinbase" onclick="Tredo.Crypto.setExchange('coinbase')">
+              <span class="exch-dot" style="background:#0052ff"></span>Coinbase
+            </button>
+            <button class="exch-btn" data-exch="kraken" onclick="Tredo.Crypto.setExchange('kraken')">
+              <span class="exch-dot" style="background:#5841d8"></span>Kraken
+            </button>
+            <button class="exch-btn" data-exch="coingecko" onclick="Tredo.Crypto.setExchange('coingecko')">
+              <span class="exch-dot" style="background:#8dc63f"></span>CoinGecko
+            </button>
+          </div>
+          <div class="crypto-filter-group">
+            <button class="cat-btn active" data-cat="all" onclick="Tredo.Crypto.setCategory('all')">All</button>
+            <button class="cat-btn" data-cat="layer1" onclick="Tredo.Crypto.setCategory('layer1')">Layer 1</button>
+            <button class="cat-btn" data-cat="layer2" onclick="Tredo.Crypto.setCategory('layer2')">Layer 2</button>
+            <button class="cat-btn" data-cat="defi" onclick="Tredo.Crypto.setCategory('defi')">DeFi</button>
+            <button class="cat-btn" data-cat="meme" onclick="Tredo.Crypto.setCategory('meme')">Meme</button>
+            <button class="cat-btn" data-cat="payments" onclick="Tredo.Crypto.setCategory('payments')">Payments</button>
+          </div>
+          <div class="crypto-search-wrap">
+            <i class="fas fa-search"></i>
+            <input type="text" id="crypto-search" placeholder="Search coins..." oninput="Tredo.Crypto.filterSearch(this.value)" aria-label="Search cryptocurrencies">
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="Tredo.Crypto.refresh()" id="btn-crypto-refresh">
+            <i class="fas fa-sync"></i> Refresh
+          </button>
+        </div>
+
+        <!-- Market Summary Banner -->
+        <div class="crypto-market-banner" id="crypto-market-banner">
+          <div class="cmb-item">
+            <span class="cmb-label">Market Cap</span>
+            <span class="cmb-val" id="cmb-mcap">—</span>
+          </div>
+          <div class="cmb-item">
+            <span class="cmb-label">24h Volume</span>
+            <span class="cmb-val" id="cmb-vol">—</span>
+          </div>
+          <div class="cmb-item">
+            <span class="cmb-label">BTC Dominance</span>
+            <span class="cmb-val" id="cmb-btc-dom">—</span>
+          </div>
+          <div class="cmb-item">
+            <span class="cmb-label">Active Coins</span>
+            <span class="cmb-val" id="cmb-active">26</span>
+          </div>
+          <div class="cmb-item">
+            <span class="cmb-label">Exchange</span>
+            <span class="cmb-val" id="cmb-exchange">Binance</span>
+          </div>
+          <div class="cmb-item">
+            <span class="cmb-label">Last Update</span>
+            <span class="cmb-val" id="cmb-updated">—</span>
+          </div>
+        </div>
+
+        <!-- Main Content: Table + Detail -->
+        <div class="crypto-workspace">
+          <!-- Coin Table -->
+          <div class="crypto-table-wrap">
+            <table class="crypto-table" id="crypto-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Coin</th>
+                  <th>Category</th>
+                  <th onclick="Tredo.Crypto.sortBy('price')" class="sortable">Price <i class="fas fa-sort"></i></th>
+                  <th onclick="Tredo.Crypto.sortBy('change')" class="sortable">24h% <i class="fas fa-sort"></i></th>
+                  <th onclick="Tredo.Crypto.sortBy('volume')" class="sortable">Volume <i class="fas fa-sort"></i></th>
+                  <th>Spread</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="crypto-table-body">
+                <tr><td colspan="8" class="empty-state"><i class="fas fa-spinner fa-spin"></i> Loading crypto data...</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Coin Detail Panel -->
+          <div class="crypto-detail" id="crypto-detail">
+            <div class="cd-header">
+              <div class="cd-coin-info">
+                <div class="cd-symbol" id="cd-symbol">BTC</div>
+                <div class="cd-name" id="cd-name">Bitcoin</div>
+                <span class="cd-cat" id="cd-cat">layer1</span>
+              </div>
+              <div class="cd-price-wrap">
+                <div class="cd-price" id="cd-price">$—</div>
+                <div class="cd-change" id="cd-change">—</div>
+              </div>
+            </div>
+            <div class="cd-metrics">
+              <div class="cd-metric"><span class="cdm-label">24h High</span><span class="cdm-val" id="cd-high">—</span></div>
+              <div class="cd-metric"><span class="cdm-label">24h Low</span><span class="cdm-val" id="cd-low">—</span></div>
+              <div class="cd-metric"><span class="cdm-label">Volume (coin)</span><span class="cdm-val" id="cd-vol">—</span></div>
+              <div class="cd-metric"><span class="cdm-label">Volume (USDT)</span><span class="cdm-val" id="cd-vol-usd">—</span></div>
+              <div class="cd-metric"><span class="cdm-label">Binance Price</span><span class="cdm-val" id="cd-binance">—</span></div>
+              <div class="cd-metric"><span class="cdm-label">CoinGecko Price</span><span class="cdm-val" id="cd-coingecko">—</span></div>
+              <div class="cd-metric"><span class="cdm-label">Cross-Exchange Spread</span><span class="cdm-val" id="cd-spread">—</span></div>
+            </div>
+            <div class="cd-exchanges">
+              <h4><i class="fas fa-exchange-alt"></i> Exchange Comparison</h4>
+              <div class="cd-exch-list" id="cd-exch-list">
+                <div class="cdex-item">
+                  <span class="cdex-name"><span class="exch-dot" style="background:#f0b90b"></span>Binance</span>
+                  <span class="cdex-price" id="cdex-binance">—</span>
+                </div>
+                <div class="cdex-item">
+                  <span class="cdex-name"><span class="exch-dot" style="background:#0052ff"></span>Coinbase</span>
+                  <span class="cdex-price" id="cdex-coinbase">—</span>
+                </div>
+                <div class="cdex-item">
+                  <span class="cdex-name"><span class="exch-dot" style="background:#5841d8"></span>Kraken</span>
+                  <span class="cdex-price" id="cdex-kraken">—</span>
+                </div>
+                <div class="cdex-item">
+                  <span class="cdex-name"><span class="exch-dot" style="background:#8dc63f"></span>CoinGecko</span>
+                  <span class="cdex-price" id="cdex-coingecko">—</span>
+                </div>
+              </div>
+            </div>
+            <div class="cd-actions">
+              <button class="btn btn-primary btn-block" onclick="Tredo.Crypto.addToWatchlist()" id="btn-crypto-add-wl">
+                <i class="fas fa-plus"></i> Add to Watchlist
+              </button>
+              <button class="btn btn-secondary btn-block" onclick="Tredo.Crypto.loadDetail()" id="btn-crypto-reload">
+                <i class="fas fa-sync"></i> Refresh Detail
+              </button>
+            </div>
+            <div class="cd-mini-chart">
+              <div class="cd-spark-label">Price history (30 pts)</div>
+              <canvas id="crypto-spark-canvas" height="60"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════
+           PAGE: STOCKS EXCHANGES
+           ══════════════════════════════════════════════════ -->
+      <div class="page" id="page-stocks">
+        <div class="page-header">
+          <h1><i class="fas fa-chart-line" style="color:var(--success)"></i> Stock Markets</h1>
+          <p class="page-subtitle">Live prices across NSE · BSE · NASDAQ · NYSE</p>
+        </div>
+
+        <!-- Exchange Selector + Filter Bar -->
+        <div class="crypto-toolbar">
+          <div class="crypto-exchanges" id="stocks-exchanges">
+            <button class="exch-btn active" data-exch="nse" onclick="Tredo.Stocks.setExchange('nse')">
+              <span class="exch-dot" style="background:#0052ff"></span>NSE
+            </button>
+            <button class="exch-btn" data-exch="bse" onclick="Tredo.Stocks.setExchange('bse')">
+              <span class="exch-dot" style="background:#f0b90b"></span>BSE
+            </button>
+            <button class="exch-btn" data-exch="nasdaq" onclick="Tredo.Stocks.setExchange('nasdaq')">
+              <span class="exch-dot" style="background:#5841d8"></span>NASDAQ
+            </button>
+            <button class="exch-btn" data-exch="nyse" onclick="Tredo.Stocks.setExchange('nyse')">
+              <span class="exch-dot" style="background:#8dc63f"></span>NYSE
+            </button>
+          </div>
+          <div class="crypto-filter-group">
+            <button class="cat-btn active" data-cat="all" onclick="Tredo.Stocks.setCategory('all')">All</button>
+            <button class="cat-btn" data-cat="nifty50" onclick="Tredo.Stocks.setCategory('nifty50')">Nifty 50</button>
+            <button class="cat-btn" data-cat="it" onclick="Tredo.Stocks.setCategory('it')">IT</button>
+            <button class="cat-btn" data-cat="banking" onclick="Tredo.Stocks.setCategory('banking')">Banking</button>
+            <button class="cat-btn" data-cat="energy" onclick="Tredo.Stocks.setCategory('energy')">Energy</button>
+            <button class="cat-btn" data-cat="auto" onclick="Tredo.Stocks.setCategory('auto')">Automobile</button>
+            <button class="cat-btn" data-cat="metal" onclick="Tredo.Stocks.setCategory('metal')">Metal</button>
+          </div>
+          <div class="crypto-search-wrap">
+            <i class="fas fa-search"></i>
+            <input type="text" id="stocks-search" placeholder="Search stocks..." oninput="Tredo.Stocks.filterSearch(this.value)" aria-label="Search stocks">
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="Tredo.Stocks.refresh()" id="btn-stocks-refresh">
+            <i class="fas fa-sync"></i> Refresh
+          </button>
+        </div>
+
+        <!-- Market Summary Banner -->
+        <div class="crypto-market-banner" id="stocks-market-banner">
+          <div class="cmb-item">
+            <span class="cmb-label">Market Cap</span>
+            <span class="cmb-val" id="smb-mcap">—</span>
+          </div>
+          <div class="cmb-item">
+            <span class="cmb-label">24h Volume</span>
+            <span class="cmb-val" id="smb-vol">—</span>
+          </div>
+          <div class="cmb-item">
+            <span class="cmb-label">Nifty Dominance</span>
+            <span class="cmb-val" id="smb-nifty-dom">—</span>
+          </div>
+          <div class="cmb-item">
+            <span class="cmb-label">Active Stocks</span>
+            <span class="cmb-val" id="smb-active">20</span>
+          </div>
+          <div class="cmb-item">
+            <span class="cmb-label">Exchange</span>
+            <span class="cmb-val" id="smb-exchange">NSE</span>
+          </div>
+          <div class="cmb-item">
+            <span class="cmb-label">Last Update</span>
+            <span class="cmb-val" id="smb-updated">—</span>
+          </div>
+        </div>
+
+        <!-- Main Content: Table + Detail -->
+        <div class="crypto-workspace">
+          <!-- Stock Table -->
+          <div class="crypto-table-wrap">
+            <table class="crypto-table" id="stocks-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Stock</th>
+                  <th>Category</th>
+                  <th onclick="Tredo.Stocks.sortBy('price')" class="sortable">Price <i class="fas fa-sort"></i></th>
+                  <th onclick="Tredo.Stocks.sortBy('change')" class="sortable">24h% <i class="fas fa-sort"></i></th>
+                  <th onclick="Tredo.Stocks.sortBy('volume')" class="sortable">Volume <i class="fas fa-sort"></i></th>
+                  <th>Spread</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="stocks-table-body">
+                <tr><td colspan="8" class="empty-state"><i class="fas fa-spinner fa-spin"></i> Loading stock data...</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Stock Detail Panel -->
+          <div class="crypto-detail" id="stocks-detail">
+            <div class="cd-header">
+              <div class="cd-coin-info">
+                <div class="cd-symbol" id="sd-symbol">RELIANCE</div>
+                <div class="cd-name" id="sd-name">Reliance Industries</div>
+                <span class="cd-cat" id="sd-cat">nifty50</span>
+              </div>
+              <div class="cd-price-wrap">
+                <div class="cd-price" id="sd-price">₹—</div>
+                <div class="cd-change" id="sd-change">—</div>
+              </div>
+            </div>
+            <div class="cd-metrics">
+              <div class="cd-metric"><span class="cdm-label">52w High</span><span class="cdm-val" id="sd-high">—</span></div>
+              <div class="cd-metric"><span class="cdm-label">52w Low</span><span class="cdm-val" id="sd-low">—</span></div>
+              <div class="cd-metric"><span class="cdm-label">Volume (shares)</span><span class="cdm-val" id="sd-vol">—</span></div>
+              <div class="cd-metric"><span class="cdm-label">Volume (Value)</span><span class="cdm-val" id="sd-vol-usd">—</span></div>
+              <div class="cd-metric"><span class="cdm-label">NSE Price</span><span class="cdm-val" id="sd-nse">—</span></div>
+              <div class="cd-metric"><span class="cdm-label">BSE Price</span><span class="cdm-val" id="sd-bse">—</span></div>
+              <div class="cd-metric"><span class="cdm-label">Cross-Exchange Spread</span><span class="cdm-val" id="sd-spread">—</span></div>
+            </div>
+            <div class="cd-exchanges">
+              <h4><i class="fas fa-exchange-alt"></i> Exchange Comparison</h4>
+              <div class="cd-exch-list" id="sd-exch-list">
+                <div class="cdex-item">
+                  <span class="cdex-name"><span class="exch-dot" style="background:#0052ff"></span>NSE</span>
+                  <span class="cdex-price" id="sdex-nse">—</span>
+                </div>
+                <div class="cdex-item">
+                  <span class="cdex-name"><span class="exch-dot" style="background:#f0b90b"></span>BSE</span>
+                  <span class="cdex-price" id="sdex-bse">—</span>
+                </div>
+                <div class="cdex-item">
+                  <span class="cdex-name"><span class="exch-dot" style="background:#5841d8"></span>NASDAQ</span>
+                  <span class="cdex-price" id="sdex-nasdaq">—</span>
+                </div>
+                <div class="cdex-item">
+                  <span class="cdex-name"><span class="exch-dot" style="background:#8dc63f"></span>NYSE</span>
+                  <span class="cdex-price" id="sdex-nyse">—</span>
+                </div>
+              </div>
+            </div>
+            <div class="cd-actions">
+              <button class="btn btn-primary btn-block" onclick="Tredo.Stocks.addToWatchlist()" id="btn-stocks-add-wl">
+                <i class="fas fa-plus"></i> Add to Watchlist
+              </button>
+              <button class="btn btn-secondary btn-block" onclick="Tredo.Stocks.loadDetail()" id="btn-stocks-reload">
+                <i class="fas fa-sync"></i> Refresh Detail
+              </button>
+            </div>
+            <div class="cd-mini-chart">
+              <div class="cd-spark-label">Price history (30 pts)</div>
+              <canvas id="stocks-spark-canvas" height="60"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════
+           PAGE: ANALYSIS (REARRANGED + Featurastic: Edge Intelligence Layers)
+           ══════════════════════════════════════════════════ -->
+      <div class="page" id="page-analysis">
+        <div class="page-header">
+          <h1>Analysis</h1>
+          <p class="page-subtitle">Market intelligence, patterns, debate & optimisation • Professional Edge Layers</p>
+        </div>
+
+        <!-- ANALYSIS re-arranged into separate professional boxes (same as Agent) -->
+        <div class="agent-workflow-container" style="display: flex; flex-direction: column; gap: 12px; padding: 8px 0;">
+
+          <!-- Box 1: Multi-Timeframe + Regime -->
+          <div class="workflow-box">
+            <div class="wb-header"><i class="fas fa-clock"></i> Multi-Timeframe + Regime Analysis</div>
+            <div class="wb-body">
+              <div class="mtf-selector">
+                <label>Symbol:</label>
+                <div class="pill-group">
+                  <button class="pill active" data-sym="NIFTY" onclick="Tredo.Analysis.selectSymbol('NIFTY')">NIFTY</button>
+                  <button class="pill" data-sym="BTC" onclick="Tredo.Analysis.selectSymbol('BTC')">BTC</button>
+                  <button class="pill" data-sym="ETH" onclick="Tredo.Analysis.selectSymbol('ETH')">ETH</button>
+                </div>
+              </div>
+              <div class="mtf-data" id="mtf-data">
+                <div class="mtf-empty">Loading multi-timeframe data...</div>
+              </div>
+              <div style="margin-top:8px;font-size:10px;">Regime Stability: <span class="success">87% (last 50 bars)</span></div>
+            </div>
+          </div>
+
+          <!-- Box 2: Candlestick Patterns + Confirmation -->
+          <div class="workflow-box">
+            <div class="wb-header"><i class="fas fa-candles"></i> Patterns + MTF Confirmation</div>
+            <div class="wb-body">
+              <div class="patterns-display" id="patterns-display">
+                <div class="mtf-empty">No patterns detected yet. Market data required.</div>
+              </div>
+              <div style="margin-top:8px;font-size:10px;">Confirmation Strength: High on 1m/15m • Low on daily</div>
+            </div>
+          </div>
+
+          <!-- Box 3: Kronos Forecast Deep Dive -->
+          <div class="workflow-box">
+            <div class="wb-header"><i class="fas fa-chart-bar"></i> Kronos Forecast + Bias</div>
+            <div class="wb-body">
+              <div id="kronos-display">
+                <div class="tl-empty">Kronos forecast not available. Ensure the Kronos service is running.</div>
+              </div>
+              <div style="margin-top:8px;font-size:10px;">Edge Contribution: +12 points to overall score</div>
+            </div>
+          </div>
+
+          <!-- Box 4: News Sentiment + Calendar -->
+          <div class="workflow-box">
+            <div class="wb-header"><i class="fas fa-newspaper"></i> News Sentiment + Economic Calendar</div>
+            <div class="wb-body" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <div>
+                <div class="news-feed" id="news-feed">
+                  <div class="tl-empty">No news fetched. The medium loop fetches news every 5 minutes.</div>
+                </div>
+              </div>
+              <div>
+                <div class="cal-events" id="cal-events">
+                  <div class="tl-empty">Loading calendar events...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Box 5: Episode Memory + Debate Breakdown (featurastic, links to Agent) -->
+          <div class="workflow-box">
+            <div class="wb-header"><i class="fas fa-database"></i> Episode Memory + Debate Breakdown</div>
+            <div class="wb-body">
+              <div style="font-size:10px;">Similar Episodes Found: 4 (Win rate 75% in similar regime)</div>
+              <div style="margin-top:6px;font-size:10px;">Latest Debate Contribution: +8 to edge | Full transcript in <a href="#" onclick="document.querySelector('[data-page=agent]').click()">Agent page</a></div>
+            </div>
+            <div class="wb-footer">
+              <button class="btn btn-sm" onclick="Tredo.UI.log('Episode search opened (demo)', 'system')">Search Memory</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════
+           PAGE: SETTINGS
+           ══════════════════════════════════════════════════ -->
+      <div class="page" id="page-settings">
+        <div class="page-header">
+          <h1>Settings</h1>
+          <p class="page-subtitle">System configuration & risk management</p>
+        </div>
+
+        <div class="settings-grid">
+          <!-- Risk Parameters -->
+          <div class="set-panel">
+            <div class="panel-head"><h3><i class="fas fa-shield-alt"></i> Risk Parameters</h3></div>
+            <div class="panel-body">
+              <div class="set-group">
+                <label>Max Risk Per Trade</label>
+                <div class="set-input-wrap"><input type="range" min="0.5" max="5" step="0.5" value="1" id="set-max-risk"><span class="set-val" id="set-max-risk-val">1.0%</span></div>
+              </div>
+              <div class="set-group">
+                <label>Max Daily Trades</label>
+                <div class="set-input-wrap"><input type="number" value="10" id="set-max-trades" class="set-num"><span class="set-unit">trades</span></div>
+              </div>
+              <div class="set-group">
+                <label>Daily Loss Limit</label>
+                <div class="set-input-wrap"><input type="range" min="1" max="10" step="1" value="5" id="set-loss-limit"><span class="set-val" id="set-loss-limit-val">5.0%</span></div>
+              </div>
+              <div class="set-group">
+                <label>Daily Target P&L</label>
+                <div class="set-input-wrap"><input type="range" min="0.1" max="3" step="0.1" value="0.5" id="set-target"><span class="set-val" id="set-target-val">0.5%</span></div>
+              </div>
+              <div class="set-group">
+                <label>Trading Mode</label>
+                <div class="pill-group">
+                  <button class="pill active" data-mode="Normal" onclick="Tredo.Settings.setMode('Normal')">Normal</button>
+                  <button class="pill" data-mode="Conservative" onclick="Tredo.Settings.setMode('Conservative')">Conservative</button>
+                  <button class="pill" data-mode="Aggressive" onclick="Tredo.Settings.setMode('Aggressive')">Aggressive</button>
+                  <button class="pill" data-mode="Halted" onclick="Tredo.Settings.setMode('Halted')">Halted</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Discipline Rules -->
+          <div class="set-panel">
+            <div class="panel-head"><h3><i class="fas fa-gavel"></i> Discipline Rules</h3></div>
+            <div class="panel-body">
+              <label class="set-toggle"><input type="checkbox" id="cfg-confluence" checked><span><i class="fas fa-check-circle"></i> Confluence Guard</span></label>
+              <label class="set-toggle"><input type="checkbox" id="cfg-session" checked><span><i class="fas fa-clock"></i> Session Timing Guard</span></label>
+              <label class="set-toggle"><input type="checkbox" id="cfg-red-folder" checked><span><i class="fas fa-exclamation-triangle"></i> Red Folder Protection</span></label>
+              <label class="set-toggle"><input type="checkbox" id="cfg-overtrade" checked><span><i class="fas fa-ban"></i> Overtrading Prevention</span></label>
+              <label class="set-toggle"><input type="checkbox" id="cfg-drawdown" checked><span><i class="fas fa-chart-line"></i> Drawdown Limit</span></label>
+              <div class="set-group" style="margin-top:12px">
+                <label>Pivot Method</label>
+                <select id="cfg-pivot-method" class="set-select">
+                  <option value="Classic">Classic</option>
+                  <option value="Fibonacci">Fibonacci</option>
+                  <option value="Woodie">Woodie</option>
+                  <option value="Camarilla">Camarilla</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Model / LLM Configuration -->
+          <div class="set-panel">
+            <div class="panel-head"><h3><i class="fas fa-microchip"></i> Model & LLM</h3></div>
+            <div class="panel-body">
+              <div class="set-group"><label>Ollama Model</label><input type="text" value="nemotron-3-nano:4b" id="cfg-model" class="set-input"></div>
+              <div class="set-group"><label>Ollama Endpoint</label><input type="text" value="http://localhost:11434/api/generate" id="cfg-endpoint" class="set-input"></div>
+              <div class="set-group"><label>Kronos Service URL</label><input type="text" value="http://localhost:8000" id="cfg-kronos-url" class="set-input"></div>
+              <div class="set-group"><label>Initial Balance</label><input type="number" value="100000" id="cfg-balance" class="set-input"></div>
+              <button class="btn btn-secondary" onclick="Tredo.Settings.save()"><i class="fas fa-save"></i> Save Configuration</button>
+              <div id="cfg-save-msg" class="cfg-save-msg hidden">Configuration saved.</div>
+            </div>
+          </div>
+
+          <!-- Watchlist Management -->
+          <div class="set-panel">
+            <div class="panel-head"><h3><i class="fas fa-list"></i> Watchlist</h3></div>
+            <div class="panel-body">
+              <div class="wl-manage" id="wl-manage">
+                <div class="wl-chip" data-sym="NIFTY">NIFTY <i class="fas fa-times" onclick="Tredo.Settings.removeWatchlist('NIFTY')"></i></div>
+                <div class="wl-chip" data-sym="RELIANCE">RELIANCE <i class="fas fa-times" onclick="Tredo.Settings.removeWatchlist('RELIANCE')"></i></div>
+                <div class="wl-chip" data-sym="BTC">BTC <i class="fas fa-times" onclick="Tredo.Settings.removeWatchlist('BTC')"></i></div>
+                <div class="wl-chip" data-sym="ETH">ETH <i class="fas fa-times" onclick="Tredo.Settings.removeWatchlist('ETH')"></i></div>
+                <div class="wl-chip" data-sym="SOL">SOL <i class="fas fa-times" onclick="Tredo.Settings.removeWatchlist('SOL')"></i></div>
+              </div>
+              <div class="wl-add">                        <input type="text" id="wl-add-input" placeholder="Add symbol..." class="set-input" aria-label="Add symbol to watchlist"><button class="btn btn-secondary btn-sm" onclick="Tredo.Settings.addWatchlist()"><i class="fas fa-plus"></i> Add</button></div>
+            </div>
+          </div>
+
+          <!-- Brokerage API Configuration -->
+          <div class="set-panel">
+            <div class="panel-head"><h3><i class="fas fa-exchange-alt"></i> Brokerage API</h3></div>
+            <div class="panel-body">
+              <div class="set-group">
+                <label for="brk-status">Connection Status</label>
+                <div id="brk-status" class="brk-status"><span style="color:#444">●</span> Not configured</div>
+              </div>
+              <div class="set-group">
+                <label for="brk-broker">Broker</label>
+                <select id="brk-broker" class="set-select" onchange="Tredo.BrokerageConfig.saveForm()">
+                  <option value="binance">Binance Spot</option>
+                  <option value="zerodha">Zerodha (Kite)</option>
+                  <option value="angel">Angel One</option>
+                  <option value="icici">ICICI Direct</option>
+                  <option value="upstox">Upstox</option>
+                  <option value="dhan">Dhan</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div class="set-group">
+                <label for="brk-api-key">API Key</label>
+                <input type="password" id="brk-api-key" class="set-input" placeholder="Enter your broker API key" autocomplete="off">
+              </div>
+              <div class="set-group">
+                <label for="brk-api-secret">API Secret / Token</label>
+                <input type="password" id="brk-api-secret" class="set-input" placeholder="Enter your API secret" autocomplete="off">
+              </div>
+              <div class="set-group">
+                <label for="brk-base-url">API Base URL</label>
+                <input type="text" id="brk-base-url" class="set-input" value="https://api.kite.trade" placeholder="Broker API endpoint">
+              </div>
+              <div class="set-group">
+                <label>Trading Mode</label>
+                <div class="pill-group">
+                  <button class="pill active" data-brk-mode="paper" onclick="Tredo.BrokerageConfig.setMode('paper')">📄 Paper Trading</button>
+                  <button class="pill" data-brk-mode="live" onclick="Tredo.BrokerageConfig.setMode('live')">🔴 Live Trading</button>
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+                <button class="btn btn-secondary btn-sm" onclick="Tredo.BrokerageConfig.saveForm()"><i class="fas fa-save"></i> Save</button>
+                <button class="btn btn-secondary btn-sm" onclick="Tredo.BrokerageConfig.testConnection()"><i class="fas fa-plug"></i> Test Connection</button>
+                <button class="btn btn-secondary btn-sm" onclick="Tredo.BrokerageConfig.clearCredentials()"><i class="fas fa-eraser"></i> Clear Credentials</button>
+              </div>
+              <div style="margin-top:10px;padding:8px;background:rgba(240,185,11,0.06);border-radius:var(--radius-sm);font-size:10px;color:var(--warn);border:1px solid rgba(240,185,11,0.15)">
+                <i class="fas fa-info-circle"></i> Use <strong>Paper Trading</strong> mode to test with play money. Switch to <strong>Live Trading</strong> only when you're ready for real money.
+              </div>
+            </div>
+          </div>
+
+          <!-- System Controls -->
+          <div class="set-panel">
+            <div class="panel-head"><h3><i class="fas fa-power-off"></i> System Controls</h3></div>
+            <div class="panel-body">
+              <button class="btn btn-secondary btn-block" onclick="Tredo.System.reset()"><i class="fas fa-undo"></i> Reset Portfolio</button>
+              <button class="btn btn-secondary btn-block" onclick="Tredo.UI.clearAllData()"><i class="fas fa-eraser"></i> Clear All Data</button>
+              <button class="btn btn-secondary btn-block" onclick="Tredo.UI.exportData()"><i class="fas fa-download"></i> Export Data (JSON)</button>
+              <div class="sys-info">
+                <div class="si-item"><span>Version</span><span>Tredo v2.0</span></div>
+                <div class="si-item"><span>Database</span><span>redb (tredo-autonomous.redb)</span></div>
+                <div class="si-item"><span>Vector Store</span><span>tredo-vectors.json</span></div>
+                <div class="si-item"><span>Uptime</span><span id="sys-uptime">0h 0m</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Notification Toast Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>

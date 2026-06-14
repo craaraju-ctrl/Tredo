@@ -1,0 +1,22 @@
+[package]
+name = "tredo-core"
+version = "0.1.0"
+description = "tredo-core — Disciplined Core, memory (redb), LLM, Kronos client (Trading Real-time Edge Decision Optimisation)"
+edition = "2021"
+
+[features]
+default = []
+lancedb = ["dep:lancedb"]
+
+[dependencies]
+async-trait = "0.1"
+redb = "1.5"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+log = "0.4"
+reqwest = { version = "0.11", features = ["json"] }
+urlencoding = "2.1"
+quick-xml = "0.31"
+lancedb = { version = "0.4", optional = true }  # Optional for full production vector (LanceDB embedded). `cargo build --features lancedb` (may need arrow pins; falls back to JSON). Enables scale for trained memory RAG in self-evolving agents. See vector_memory.rs and research for details.

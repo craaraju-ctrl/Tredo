@@ -1,0 +1,18 @@
+[package]
+name = "tredo-server"
+version = "0.1.0"
+description = "tredo-server (optional production server)"
+edition = "2021"
+
+[dependencies]
+tredo-core = { path = "../tredo-core" }
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.7", features = ["macros", "ws"] }
+tower-http = { version = "0.5", features = ["fs", "cors"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+log = "0.4"
+env_logger = "0.10"
+tower = "0.4"
+futures = "0.3"

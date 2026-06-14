@@ -1,0 +1,11 @@
+/target
+/src-tauri/target
+/src-tauri/gen
+.DS_Store
+*.redb
+*.redb.lock
+*.db
+*.db-wal
+*.db-shm
+test_*.redb
+test_*.redb.lock
