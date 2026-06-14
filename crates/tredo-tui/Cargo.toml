@@ -6,6 +6,8 @@ description = "tredo — Full Terminal UI (ratatui) for Trading Real-time Edge D
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
 
 [dependencies]
 ratatui = "0.29"

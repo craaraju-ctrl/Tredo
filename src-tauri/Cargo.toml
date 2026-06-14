@@ -6,6 +6,8 @@ description = "tredo — Trading Real-time Edge Decision Optimisation (Tauri sec
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
 
 [dependencies]
 tauri = { version = "2", features = ["devtools"] }
