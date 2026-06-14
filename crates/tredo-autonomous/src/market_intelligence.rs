@@ -214,18 +214,15 @@ impl MarketIntelligenceAgent {
         let mut skill_results: Vec<String> = vec![];
         for skill in &skills {
             if skill.is_available() {
-                if let Ok(out) = skill
+                if let Ok(tredo_core::AgentOutput::SkillResult {
+                    name, score, note, ..
+                }) = skill
                     .execute(&AgentInput::ConfluenceRequest {
                         context: context.clone(),
                     })
                     .await
                 {
-                    if let tredo_core::AgentOutput::SkillResult {
-                        name, score, note, ..
-                    } = out
-                    {
-                        skill_results.push(format!("{}={:.2}({})", name, score, note));
-                    }
+                    skill_results.push(format!("{}={:.2}({})", name, score, note));
                 }
             }
         }
