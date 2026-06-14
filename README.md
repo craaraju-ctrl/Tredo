@@ -94,10 +94,14 @@ See `Build.md` for the complete guide on building, running, observing the self-e
 ## Getting Started
 
 1. Install prerequisites (Rust, optional Ollama + Kronos).
-2. `./tredo build`
-3. `./tredo setup` (creates config with `PAPER_MODE=true` by default).
-4. `source config/tredo.env`
-5. `./tredo tui` (primary interface) or `./tredo validate --extended` for automated real-time paper crypto testing.
+2. Copy the environment template and edit to your needs:
+   ```bash
+   cp config/tredo.env.example config/tredo.env
+   ```
+3. `./tredo build`
+4. `./tredo setup` (creates config with `PAPER_MODE=true` by default).
+5. `source config/tredo.env`
+6. `./tredo tui` (primary interface) or `./tredo validate --extended` for automated real-time paper crypto testing.
 
 Paper trading is the default and strongly recommended until you have extensive validated self-evolution data.
 
@@ -217,6 +221,20 @@ Full Terminal UI is the star of tredo. The web frontend is kept for compatibilit
 | Ollama | Latest | LLM inference (ministral-3) |
 | Python 3 | 3.10+ | Kronos forecasting service |
 | Node.js | 18+ | Tauri frontend tooling |
+
+### 🔐 Environment Setup
+
+Before running, create your `config/tredo.env` from the template:
+```bash
+cp config/tredo.env.example config/tredo.env
+```
+
+Then edit it with your API keys and preferences, and source it:
+```bash
+source config/tredo.env
+```
+
+The template documents every variable with comments. See `config/tredo.env.example` for details.
 
 ---
 
