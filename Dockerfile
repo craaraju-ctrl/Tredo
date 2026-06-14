@@ -9,7 +9,6 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates/tredo-core/Cargo.toml ./crates/tredo-core/
 COPY crates/tredo-autonomous/Cargo.toml ./crates/tredo-autonomous/
-COPY crates/tredo-agents/Cargo.toml ./crates/tredo-agents/
 COPY crates/tredo-orchestrator/Cargo.toml ./crates/tredo-orchestrator/
 COPY crates/tredo-tui/Cargo.toml ./crates/tredo-tui/
 COPY src-tauri/Cargo.toml ./src-tauri/
@@ -19,14 +18,12 @@ COPY crates/tredo-server/Cargo.toml ./crates/tredo-server/
 RUN mkdir -p \
     crates/tredo-core/src \
     crates/tredo-autonomous/src \
-    crates/tredo-agents/src \
     crates/tredo-orchestrator/src \
     crates/tredo-tui/src \
     src-tauri/src \
     crates/tredo-server/src && \
     echo "fn main(){}" > crates/tredo-core/src/lib.rs && \
     echo "fn main(){}" > crates/tredo-autonomous/src/lib.rs && \
-    echo "fn main(){}" > crates/tredo-agents/src/lib.rs && \
     echo "fn main(){}" > crates/tredo-orchestrator/src/main.rs && \
     echo "fn main(){}" > crates/tredo-tui/src/main.rs && \
     echo "fn main(){}" > src-tauri/src/main.rs && \
