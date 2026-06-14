@@ -220,23 +220,33 @@ impl MarketIntelligenceAgent {
                     })
                     .await
                 {
-                    if let tredo_core::AgentOutput::SkillResult { name, score, note, .. } = out {
+                    if let tredo_core::AgentOutput::SkillResult {
+                        name, score, note, ..
+                    } = out
+                    {
                         skill_results.push(format!("{}={:.2}({})", name, score, note));
                     }
                 }
             }
         }
-        let skills_summary = if skill_results.is_empty() { "none".to_string() } else { skill_results.join("; ") };
-        let _ = self.state.push_cot(
-            "MarketIntelligence",
-            &format!("skills executed for {}", symbol),
-            "SKILLS_RUN",
-            &format!("{} + trained memory", skills_summary),
-            0.75,
-            0,
-            None,
-            Some(symbol.to_string()),
-        ).await;
+        let skills_summary = if skill_results.is_empty() {
+            "none".to_string()
+        } else {
+            skill_results.join("; ")
+        };
+        let _ = self
+            .state
+            .push_cot(
+                "MarketIntelligence",
+                &format!("skills executed for {}", symbol),
+                "SKILLS_RUN",
+                &format!("{} + trained memory", skills_summary),
+                0.75,
+                0,
+                None,
+                Some(symbol.to_string()),
+            )
+            .await;
 
         let pivots = calculate_pivot_points(high, low, prev_close, rules.pivot_method);
         let mut confluence = calculate_confluence_score(&context, &pivots);

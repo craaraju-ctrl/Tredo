@@ -408,11 +408,11 @@ impl EpisodeStore {
     }
 
     /// Get the most recently closed trade for a symbol (used by SelfEvolutionValidator).
-    pub fn get_most_recent_closed(&self, symbol: &str) -> Result<Option<ClosedEpisode>, rusqlite::Error> {
-        let conn = self
-            .conn
-            .lock()
-            .expect("SQLite connection lock poisoned");
+    pub fn get_most_recent_closed(
+        &self,
+        symbol: &str,
+    ) -> Result<Option<ClosedEpisode>, rusqlite::Error> {
+        let conn = self.conn.lock().expect("SQLite connection lock poisoned");
         let mut stmt = conn.prepare(
             "SELECT id, symbol, direction, entry_price, exit_price, stop_loss, take_profit,
                     position_size, pnl, pnl_pct, outcome, exit_reason, regret_score, lesson,
@@ -421,7 +421,7 @@ impl EpisodeStore {
              FROM closed_trades
              WHERE symbol = ?1
              ORDER BY exit_time DESC
-             LIMIT 1"
+             LIMIT 1",
         )?;
         let mut rows = stmt.query_map(params![symbol], row_to_episode)?;
         match rows.next() {
@@ -431,16 +431,16 @@ impl EpisodeStore {
     }
 
     /// Get recent rule changes, limited to `limit` entries (used by SelfEvolutionValidator).
-    pub fn get_recent_rule_changes(&self, limit: usize) -> Result<Vec<RuleChangeSnapshot>, rusqlite::Error> {
-        let conn = self
-            .conn
-            .lock()
-            .expect("SQLite connection lock poisoned");
+    pub fn get_recent_rule_changes(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<RuleChangeSnapshot>, rusqlite::Error> {
+        let conn = self.conn.lock().expect("SQLite connection lock poisoned");
         let mut stmt = conn.prepare(
             "SELECT rule_name, old_value, new_value, reason, applied_at
              FROM rule_changes
              ORDER BY applied_at DESC
-             LIMIT ?1"
+             LIMIT ?1",
         )?;
         let rows = stmt.query_map(params![limit as i64], |row| {
             Ok(RuleChangeSnapshot {
@@ -460,14 +460,11 @@ impl EpisodeStore {
 
     /// Get all rule changes (used for full report generation).
     pub fn get_all_rule_changes(&self) -> Result<Vec<RuleChangeSnapshot>, rusqlite::Error> {
-        let conn = self
-            .conn
-            .lock()
-            .expect("SQLite connection lock poisoned");
+        let conn = self.conn.lock().expect("SQLite connection lock poisoned");
         let mut stmt = conn.prepare(
             "SELECT rule_name, old_value, new_value, reason, applied_at
              FROM rule_changes
-             ORDER BY applied_at ASC"
+             ORDER BY applied_at ASC",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok(RuleChangeSnapshot {

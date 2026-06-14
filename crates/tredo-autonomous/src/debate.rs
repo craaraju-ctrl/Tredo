@@ -81,11 +81,12 @@ impl ProposerAgent {
             .fetch_onchain(&ctx.symbol)
             .await;
 
-        let action = if format!("{:?}", regime).contains("Bull") || sentiment > 0.6 || onchain > 0.65 {
-            "BUY"
-        } else {
-            "HOLD"
-        };
+        let action =
+            if format!("{:?}", regime).contains("Bull") || sentiment > 0.6 || onchain > 0.65 {
+                "BUY"
+            } else {
+                "HOLD"
+            };
 
         DebateTurn {
             action: action.to_string(),

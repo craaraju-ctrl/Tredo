@@ -35,12 +35,12 @@ const BUCKET_SIZE: usize = 10;
 pub struct CycleMetrics {
     pub cycle_number: usize,
     pub symbol: String,
-    pub decision: String,        // "BUY" | "SELL" | "HOLD"
+    pub decision: String, // "BUY" | "SELL" | "HOLD"
     pub confidence: f64,
     pub confluence: f64,
-    pub regret_score: Option<f64>, // populated if trade closed
+    pub regret_score: Option<f64>,     // populated if trade closed
     pub trade_outcome: Option<String>, // "WIN" | "LOSS" | "BREAKEVEN"
-    pub exit_reason: Option<String>,  // "stop_loss" | "take_profit" | "manual"
+    pub exit_reason: Option<String>,   // "stop_loss" | "take_profit" | "manual"
     pub rule_change_applied: bool,
     pub rules_snapshot: RulesSnapshot,
     pub timestamp: DateTime<Utc>,
@@ -79,8 +79,6 @@ pub struct BucketStats {
     pub rule_changes: Vec<RuleChangeSnapshot>,
     pub rules_at_end: RulesSnapshot,
 }
-
-
 
 // ── Final Report ───────────────────────────────────────────────────────────
 
@@ -129,9 +127,16 @@ impl SelfEvolutionReport {
             "║        TREDO SELF-EVOLUTION VALIDATION REPORT              ║".to_string(),
             "╚══════════════════════════════════════════════════════════════╝".to_string(),
             String::new(),
-            format!("Run: {} → {}", self.run_start.format("%H:%M:%S"), self.run_end.format("%H:%M:%S")),
+            format!(
+                "Run: {} → {}",
+                self.run_start.format("%H:%M:%S"),
+                self.run_end.format("%H:%M:%S")
+            ),
             format!("Symbols: {}", self.symbols.join(", ")),
-            format!("Total cycles: {} (induce_regret={})", self.total_cycles, self.induce_regret),
+            format!(
+                "Total cycles: {} (induce_regret={})",
+                self.total_cycles, self.induce_regret
+            ),
             format!("Total rule adaptations: {}", self.total_rule_adaptations),
             String::new(),
             "── REGRET TREND ──".to_string(),
@@ -151,8 +156,14 @@ impl SelfEvolutionReport {
 
         lines.push(String::new());
         lines.push("── WIN RATE TREND ──".to_string());
-        lines.push(format!("  First half win rate:  {:.1}%", self.win_rate_first_half * 100.0));
-        lines.push(format!("  Second half win rate: {:.1}%", self.win_rate_second_half * 100.0));
+        lines.push(format!(
+            "  First half win rate:  {:.1}%",
+            self.win_rate_first_half * 100.0
+        ));
+        lines.push(format!(
+            "  Second half win rate: {:.1}%",
+            self.win_rate_second_half * 100.0
+        ));
 
         // Win rate direction
         if self.win_rate_second_half > self.win_rate_first_half {
@@ -169,7 +180,10 @@ impl SelfEvolutionReport {
             for bucket in &self.buckets {
                 let regret_str = format!("{:.3}", bucket.avg_regret);
                 let wr_str = if bucket.cycle_count > 0 {
-                    format!("{:.0}%", (bucket.win_count as f64 / bucket.cycle_count.max(1) as f64) * 100.0)
+                    format!(
+                        "{:.0}%",
+                        (bucket.win_count as f64 / bucket.cycle_count.max(1) as f64) * 100.0
+                    )
                 } else {
                     "N/A".to_string()
                 };
@@ -203,7 +217,9 @@ impl SelfEvolutionReport {
         lines.push(format!("  {}", self.summary_text));
 
         // Compounding improvement assessment
-        let compounding = if self.regret_trend == "DECREASING" && self.win_rate_second_half >= self.win_rate_first_half {
+        let compounding = if self.regret_trend == "DECREASING"
+            && self.win_rate_second_half >= self.win_rate_first_half
+        {
             "✅ Compounding improvement detected: regret decreasing and win rate stable/improving."
         } else if self.regret_trend == "DECREASING" {
             "🟡 Partial improvement: regret decreasing but win rate not yet improving."
@@ -236,16 +252,12 @@ impl SelfEvolutionValidator {
         induce_regret: bool,
     ) -> Result<SelfEvolutionReport, Box<dyn Error + Send + Sync>> {
         let run_start = Utc::now();
-        println!(
-            "\n╔══════════════════════════════════════════════════════════════╗"
-        );
+        println!("\n╔══════════════════════════════════════════════════════════════╗");
         println!(
             "║   TREDO SELF-EVOLUTION VALIDATION ({} cycles)        ║",
             cycles
         );
-        println!(
-            "╚══════════════════════════════════════════════════════════════╝"
-        );
+        println!("╚══════════════════════════════════════════════════════════════╝");
         println!(
             "Symbols: {:?} | Induce regret: {} | Bucket size: {} episodes",
             symbols, induce_regret, BUCKET_SIZE
@@ -328,17 +340,25 @@ impl SelfEvolutionValidator {
                     // Query the latest closed trade from SQLite
                     let store = &self.orchestrator.state.episode_store;
                     let recent = store.get_most_recent_closed(symbol).unwrap_or_else(|e| {
-                        eprintln!("[SelfEvolutionValidator] DB error fetching closed trade: {}", e);
+                        eprintln!(
+                            "[SelfEvolutionValidator] DB error fetching closed trade: {}",
+                            e
+                        );
                         None
                     });
                     match recent {
-                        Some(ep) => (Some(ep.regret_score), Some(ep.outcome), Some(ep.exit_reason)),
+                        Some(ep) => (
+                            Some(ep.regret_score),
+                            Some(ep.outcome),
+                            Some(ep.exit_reason),
+                        ),
                         None => (None, None, None),
                     }
                 };
 
                 // Snapshot current rules
-                let rules_snapshot = RulesSnapshot::from(&*self.orchestrator.state.rules.read().await);
+                let rules_snapshot =
+                    RulesSnapshot::from(&*self.orchestrator.state.rules.read().await);
 
                 // Track if a rule change just happened
                 let rule_change_this_cycle = {
@@ -445,7 +465,7 @@ impl SelfEvolutionValidator {
         if let Ok(json) = serde_json::to_string(&report) {
             let key = format!("evolution/report/{}", run_end.timestamp());
             let _ = self.orchestrator.state.memory.store_state(&key, &json);
-        }                // Output to agentmemory for cross-session learning
+        } // Output to agentmemory for cross-session learning
         {
             let mem = tredo_core::AgentMemoryClient::new();
             let _ = mem
@@ -486,8 +506,15 @@ impl SelfEvolutionValidator {
                 let count = current_entries.len();
 
                 let avg_regret: f64 = {
-                    let scores: Vec<f64> = current_entries.iter().filter_map(|c| c.regret_score).collect();
-                    if scores.is_empty() { 0.0 } else { scores.iter().sum::<f64>() / scores.len() as f64 }
+                    let scores: Vec<f64> = current_entries
+                        .iter()
+                        .filter_map(|c| c.regret_score)
+                        .collect();
+                    if scores.is_empty() {
+                        0.0
+                    } else {
+                        scores.iter().sum::<f64>() / scores.len() as f64
+                    }
                 };
 
                 let win_count = current_entries
@@ -641,10 +668,7 @@ impl SelfEvolutionValidator {
                 wr_second * 100.0
             ));
         } else {
-            parts.push(format!(
-                "Win rate stable around {:.0}%.",
-                wr_first * 100.0
-            ));
+            parts.push(format!("Win rate stable around {:.0}%.", wr_first * 100.0));
         }
 
         // Rule adaptations

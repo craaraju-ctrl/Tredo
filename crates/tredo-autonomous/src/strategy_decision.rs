@@ -144,10 +144,19 @@ impl StrategyDecisionAgent {
                 entry_price: context.current_price,
                 stop_loss: {
                     let base_sl = context.current_price * 0.98;
-                    if std::env::var("VALIDATION_INDUCE_REGRET").map(|v| v == "true").unwrap_or(false) {
-                        let tight = std::env::var("VALIDATION_TIGHT_SL_PCT").ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.5) / 100.0;
+                    if std::env::var("VALIDATION_INDUCE_REGRET")
+                        .map(|v| v == "true")
+                        .unwrap_or(false)
+                    {
+                        let tight = std::env::var("VALIDATION_TIGHT_SL_PCT")
+                            .ok()
+                            .and_then(|s| s.parse::<f64>().ok())
+                            .unwrap_or(0.5)
+                            / 100.0;
                         context.current_price * (1.0 - tight)
-                    } else { base_sl }
+                    } else {
+                        base_sl
+                    }
                 },
                 take_profit: context.current_price * 1.04,
                 position_size: 0.01, // default; risk layer will adjust
@@ -397,10 +406,19 @@ impl StrategyDecisionAgent {
             tredo_core::LlmTradeDecision {
                 action: debate_action.clone(),
                 entry,
-                sl: if std::env::var("VALIDATION_INDUCE_REGRET").map(|v| v == "true").unwrap_or(false) {
-                    let tight = std::env::var("VALIDATION_TIGHT_SL_PCT").ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.5) / 100.0;
+                sl: if std::env::var("VALIDATION_INDUCE_REGRET")
+                    .map(|v| v == "true")
+                    .unwrap_or(false)
+                {
+                    let tight = std::env::var("VALIDATION_TIGHT_SL_PCT")
+                        .ok()
+                        .and_then(|s| s.parse::<f64>().ok())
+                        .unwrap_or(0.5)
+                        / 100.0;
                     entry * (1.0 - tight)
-                } else { entry * 0.99 },
+                } else {
+                    entry * 0.99
+                },
                 tp: entry * 1.02,
                 reason: debate_reason.clone(),
             }

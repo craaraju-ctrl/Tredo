@@ -72,7 +72,7 @@ impl AgentSkill for RegimeDetector {
             );
             Ok(AgentOutput::SkillResult {
                 name: self.name().to_string(),
-                score: 0.8,  // regime confidence proxy
+                score: 0.8, // regime confidence proxy
                 note: format!("{:?}", regime),
                 confidence: 0.75,
             })
