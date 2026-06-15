@@ -80,15 +80,13 @@ fn simulate_outcome_recording(state: &SharedState, symbol: &str, pnl: f64, was_w
     let episode_id = format!("sim-ep-{}", symbol);
 
     // Simulate some skill votes (as MI would have captured)
-    let votes = vec![
-        tredo_core::SkillVote {
-            skill_name: "SentimentAnalyzer".to_string(),
-            direction: tredo_core::SkillDirection::Bullish,
-            weight: 0.30,
-            confidence: 0.75,
-            score: 0.70,
-        },
-    ];
+    let votes = vec![tredo_core::SkillVote {
+        skill_name: "SentimentAnalyzer".to_string(),
+        direction: tredo_core::SkillDirection::Bullish,
+        weight: 0.30,
+        confidence: 0.75,
+        score: 0.70,
+    }];
 
     for v in &votes {
         let sp = tredo_autonomous::episode_store::SkillPerformanceRow {
@@ -116,10 +114,22 @@ fn simulate_outcome_recording(state: &SharedState, symbol: &str, pnl: f64, was_w
         position_size: 1.0,
         pnl,
         pnl_pct: pnl / 100.0,
-        outcome: if was_win { "WIN".to_string() } else { "LOSS".to_string() },
-        exit_reason: if pnl > 0.0 { "take_profit".to_string() } else { "stop_loss".to_string() },
+        outcome: if was_win {
+            "WIN".to_string()
+        } else {
+            "LOSS".to_string()
+        },
+        exit_reason: if pnl > 0.0 {
+            "take_profit".to_string()
+        } else {
+            "stop_loss".to_string()
+        },
         regret_score: if was_win { 0.15 } else { 0.65 },
-        lesson: if was_win { "Good signal followed.".to_string() } else { "Overtraded or bad confluence.".to_string() },
+        lesson: if was_win {
+            "Good signal followed.".to_string()
+        } else {
+            "Overtraded or bad confluence.".to_string()
+        },
         confluence_score: 0.72,
         portfolio_heat: 0.02,
         market_regime: "TrendingBull".to_string(),
@@ -576,10 +586,7 @@ async fn test_executer_handles_no_llm() {
     // and passed through (see orchestrator_pipeline.rs and the Gap 1 fix).
     // Agentic call (no aggregated signal passed from test harness for this isolated case).
     // In the real orchestrator the AggregatedSignal is always computed first and passed.
-    let result = orch
-        .tredo()
-        .run_executer("BTC", 65_000.0)
-        .await;
+    let result = orch.tredo().run_executer("BTC", 65_000.0).await;
 
     // Without an LLM running, we expect an error (connection refused or similar)
     match &result {
@@ -703,7 +710,7 @@ async fn test_pipeline_state_consistency() {
 
     // Full pipeline call should complete without panicking
     let summary = orch
-        .run_full_pipeline(symbol)  // agentic call: agent decides direction + exact entry/SL/TP from its analysis of indicators (RSI, MACD, volume, patterns, etc.) and debate/memory/rules
+        .run_full_pipeline(symbol) // agentic call: agent decides direction + exact entry/SL/TP from its analysis of indicators (RSI, MACD, volume, patterns, etc.) and debate/memory/rules
         .await;
 
     match &summary {
@@ -835,7 +842,10 @@ async fn test_portfolio_management_via_tredo() {
         .await
         .expect("Identifier should succeed for real skill/agg population");
     assert!(disc_ok, "NIFTY discipline should pass in test");
-    println!("  [REAL CYCLE] Identifier done: conf={:.1}%, aggregated now in state for decision", conf * 100.0);
+    println!(
+        "  [REAL CYCLE] Identifier done: conf={:.1}%, aggregated now in state for decision",
+        conf * 100.0
+    );
 
     // Run verifier
     let equity = get_equity(&orch.state).await;
@@ -869,7 +879,11 @@ async fn test_portfolio_management_via_tredo() {
             .expect("Should add position using the levels the agent itself decided");
         println!(
             "  [REAL CYCLE] Agent decided to trade: {} {} @ entry={:.2} SL={:.2} TP={:.2}",
-            if signal.direction == TradeDirection::Long { "BUY" } else { "SELL" },
+            if signal.direction == TradeDirection::Long {
+                "BUY"
+            } else {
+                "SELL"
+            },
             signal.symbol,
             signal.entry_price,
             signal.stop_loss,
@@ -883,7 +897,11 @@ async fn test_portfolio_management_via_tredo() {
         // In a real system the fast loop / ExecutionCoordinator would do this when price hits the agent's SL/TP.
         {
             let mut portfolio = orch.state.portfolio.write().await;
-            if let Some(pos) = portfolio.open_positions.iter_mut().find(|p| p.symbol == "NIFTY") {
+            if let Some(pos) = portfolio
+                .open_positions
+                .iter_mut()
+                .find(|p| p.symbol == "NIFTY")
+            {
                 // Hit the take_profit the *agent* decided
                 pos.current_price = signal.take_profit;
             }
@@ -894,14 +912,19 @@ async fn test_portfolio_management_via_tredo() {
         let op = tredo_autonomous::outcome_processor::OutcomeProcessor::new(orch.state.clone());
         let pos = {
             let p = orch.state.portfolio.read().await;
-            p.open_positions.iter().find(|p| p.symbol == "NIFTY").cloned().expect("pos after agent decision")
+            p.open_positions
+                .iter()
+                .find(|p| p.symbol == "NIFTY")
+                .cloned()
+                .expect("pos after agent decision")
         };
         let pnl = if pos.direction == TradeDirection::Long {
             (pos.current_price - pos.entry_price) * pos.quantity
         } else {
             (pos.entry_price - pos.current_price) * pos.quantity
         };
-        op.close_episode(&pos, pos.current_price, "take_profit", pnl).await;
+        op.close_episode(&pos, pos.current_price, "take_profit", pnl)
+            .await;
         println!("  [REAL CYCLE] Real OutcomeProcessor.close_episode executed with levels the agent itself computed");
 
         // Cleanup
@@ -923,8 +946,12 @@ async fn test_portfolio_management_via_tredo() {
     // Simulate price to TP and trigger real close path (calls close_episode with the real votes from MI)
     {
         let mut portfolio = orch.state.portfolio.write().await;
-        if let Some(pos) = portfolio.open_positions.iter_mut().find(|p| p.symbol == "NIFTY") {
-            pos.current_price = 24_800.0;  // hit TP
+        if let Some(pos) = portfolio
+            .open_positions
+            .iter_mut()
+            .find(|p| p.symbol == "NIFTY")
+        {
+            pos.current_price = 24_800.0; // hit TP
         }
     }
 
@@ -937,7 +964,10 @@ async fn test_portfolio_management_via_tredo() {
     let pnl = 300.0;
     let pos_opt = {
         let p = orch.state.portfolio.read().await;
-        p.open_positions.iter().find(|p| p.symbol == "NIFTY").cloned()
+        p.open_positions
+            .iter()
+            .find(|p| p.symbol == "NIFTY")
+            .cloned()
     };
     if let Some(pos) = pos_opt {
         op.close_episode(&pos, 24_800.0, "take_profit", pnl).await;

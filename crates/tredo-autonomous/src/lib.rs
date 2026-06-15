@@ -26,6 +26,10 @@ pub mod state;
 pub mod strategy_decision;
 pub mod tredo;
 pub mod types;
+pub mod weight_tuner; // AttributionEngine + symmetric reward/penalty weight evolution (Layer 4)
+pub mod walk_forward_runner; // Prevents parameter overfitting via train/test rolling windows before paper trading
+pub mod risk_guardian; // Risk parameters that can be evolved / rolled back by MetaControl
+pub mod outcome_processor; // Pre-trade snapshot + AttributionEngine backprop + regime-conditional MetaControl on close
 
 // === NEW SKILLS/TOOLS (research upgrades: sentiment, vol, regime for better MI/risk/strategies) ===
 pub mod correlation_checker;
@@ -33,7 +37,8 @@ pub mod debate;
 pub mod market_metrics_meter; // New: Market Metrics Meter tool - computes rich indicators (RSI/MACD/ATR/BB/Stoch/Vol/Regime/Fib) as pluggable AgentSkill + direct meter for autonomous levels
 pub mod news_analyser; // New: integrated News Analyser (uses multi-API NewsFetcher + scores) as AgentSkill + tool, connected to memory/WS/pipeline/aggregator
 pub mod on_chain_data; // New on-chain tool for crypto skills (free API stub ready)
-pub mod regime_detector;
+pub mod regime_classifier; // Cognitive Core (Layer 2) — regime understanding belongs here, not in pure data ingestion (Layer 1)
+pub mod regime_detector; // kept for backward compat during migration
 pub mod sentiment_analyzer;
 pub mod volatility_calculator; // Full debate pipeline upgrade (aggregator + 4 agents powered by new skills)
 

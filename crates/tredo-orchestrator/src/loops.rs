@@ -6,8 +6,7 @@ use tredo_autonomous::state::SharedState;
 use tredo_autonomous::AutonomousOrchestrator;
 use tredo_core::episode::{MarketStateSnapshot, ReasoningStep, TradingEpisode};
 use tredo_core::{
-    calculate_confluence_score, calculate_pivot_points, Agent, MarketContext, OhlcvBar,
-    PivotMethod, TradeDirection,
+    calculate_confluence_score, calculate_pivot_points, Agent, MarketContext, OhlcvBar, PivotMethod,
 };
 
 // ── Fast Loop (every 5s): tactical execution, SL/TP, price refresh ─────────
@@ -102,7 +101,7 @@ pub async fn medium_loop(
 
                 // Run full pipeline for each symbol
                 for symbol in &assets {
-                    let is_crypto = is_crypto_symbol(symbol);
+                    let _is_crypto = is_crypto_symbol(symbol);
 
                     let price = {
                         let portfolio = orchestrator.state.portfolio.read().await;
@@ -155,7 +154,7 @@ pub async fn medium_loop(
                     let c = client.clone();
                     let st = orchestrator.state.clone();
                     tokio::spawn(async move {
-                        let fetcher = tredo_core::NewsFetcher::new(c, st.config.clone());  // pass config for free news API keys (Alpha Vantage, Finnhub etc from research)
+                        let fetcher = tredo_core::NewsFetcher::new(c, (*st.config).clone());  // pass config for free news API keys (Alpha Vantage, Finnhub etc from research)
                         match fetcher.fetch_headlines(&sym).await {
                             Ok(headlines) if !headlines.is_empty() => {
                                 let summary = st.llm.summarize_news(&headlines, &sym).await;

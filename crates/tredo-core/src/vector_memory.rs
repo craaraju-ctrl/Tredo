@@ -7,13 +7,15 @@ use std::collections::HashMap;
 #[cfg(feature = "lancedb")]
 mod lance_backend {
     use super::*;
-    use arrow_array::{Array, Float32Array, Float64Array, RecordBatch, RecordBatchIterator, StringArray};
+    use arrow_array::{
+        Array, Float32Array, Float64Array, RecordBatch, RecordBatchIterator, StringArray,
+    };
     use arrow_schema::{DataType, Field, Schema};
     use chrono::{DateTime, Utc};
     use futures::TryStreamExt;
     use lancedb::connect;
-    use lancedb::query::QueryBase;
     use lancedb::query::ExecutableQuery;
+    use lancedb::query::QueryBase;
     use std::sync::Arc;
 
     /// The LanceDbBackend wraps the table, created lazily on first store.
@@ -87,14 +89,12 @@ mod lance_backend {
             let regrets = Float64Array::from(regret_values);
 
             let embedding_values = Float32Array::from(entry.embedding.clone());
-            let embedding_array = Arc::new(
-                arrow_array::FixedSizeListArray::new(
-                    Arc::new(Field::new("item", DataType::Float32, false)),
-                    dim,
-                    Arc::new(embedding_values),
-                    None,
-                )
-            );
+            let embedding_array = Arc::new(arrow_array::FixedSizeListArray::new(
+                Arc::new(Field::new("item", DataType::Float32, false)),
+                dim,
+                Arc::new(embedding_values),
+                None,
+            ));
 
             let table_schema = self.table.schema().await?;
             let batch = RecordBatch::try_new(
@@ -135,11 +135,7 @@ mod lance_backend {
                 filter.push_str(&format!("regret_score <= {}", reg));
             }
 
-            let mut q = self
-                .table
-                .query()
-                .nearest_to(query_embedding)?
-                .limit(top_k);
+            let mut q = self.table.query().nearest_to(query_embedding)?.limit(top_k);
 
             if !filter.is_empty() {
                 q = q.only_if(&filter);
@@ -211,7 +207,11 @@ mod lance_backend {
                         None
                     } else {
                         let v = regret_scores.value(i);
-                        if v.is_nan() { None } else { Some(v) }
+                        if v.is_nan() {
+                            None
+                        } else {
+                            Some(v)
+                        }
                     };
 
                     // LanceDB returns distance (lower = closer). The default metric is L2.
@@ -234,8 +234,6 @@ mod lance_backend {
 
             Ok(results)
         }
-
-
     }
 }
 
@@ -383,10 +381,7 @@ impl VectorMemory {
     ///   When the `lancedb` feature is enabled, LanceDB will create a sibling
     ///   directory at `{stem}.lance` (e.g. `"tredo_vectors.lance/"`).
     pub fn new(db_path: &str) -> Self {
-        println!(
-            "[VectorMemory] Initialized (JSON backend: {})",
-            db_path
-        );
+        println!("[VectorMemory] Initialized (JSON backend: {})", db_path);
 
         Self {
             #[cfg(feature = "lancedb")]
@@ -487,9 +482,7 @@ impl VectorMemory {
 
         #[cfg(feature = "lancedb")]
         if let Some(lance) = &self.lancedb {
-            return lance
-                .search(&query_embedding, top_k, None, None)
-                .await;
+            return lance.search(&query_embedding, top_k, None, None).await;
         }
 
         // JSON brute-force fallback (also used when lancedb feature is off)

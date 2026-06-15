@@ -217,8 +217,9 @@ fn compute_ema(bars: &[OhlcvBar], period: usize) -> f64 {
 /// No external price points are ever injected here.
 /// The AggregatedSignal (cross-skill consensus) is now a first-class input so the agent
 /// actually listens to the combined voice of its own skills instead of ignoring them.
+#[allow(clippy::too_many_arguments)]
 pub fn compute_autonomous_levels(
-    symbol: &str,
+    _symbol: &str,
     current_price: f64,
     pivots: &tredo_core::PivotLevels,
     _patterns: &[tredo_core::CandlestickPattern], // patterns come from MI state; kept for future extension
@@ -226,11 +227,11 @@ pub fn compute_autonomous_levels(
     rsi: f64,
     macd_hist: f64,
     atr_pct: f64,
-    rules: &DisciplineRules,
+    _rules: &DisciplineRules,
     aggregated_signal: Option<&tredo_core::AggregatedSignal>,
-) -> (f64, f64, f64, f64) {  // entry, sl, tp, rr
+) -> (f64, f64, f64, f64) {
+    // entry, sl, tp, rr
     let mut direction = tredo_core::TradeDirection::Long;
-    let mut entry = current_price;
 
     // === RESPECT THE AGGREGATED SIGNAL (Gap 1 fix) ===
     // The agent now lets the combined skill consensus (AggregatedSignal) have real
@@ -251,14 +252,16 @@ pub fn compute_autonomous_levels(
     if agg_bias == 0.0 {
         if rsi > 70.0 || (regime == crate::types::MarketRegime::TrendingBear && macd_hist < 0.0) {
             direction = tredo_core::TradeDirection::Short;
-        } else if rsi < 30.0 || (regime == crate::types::MarketRegime::TrendingBull && macd_hist > 0.0) {
+        } else if rsi < 30.0
+            || (regime == crate::types::MarketRegime::TrendingBull && macd_hist > 0.0)
+        {
             direction = tredo_core::TradeDirection::Long;
         }
     }
 
     // Entry near current or breakout, biased by aggregated conviction
     let breakout_buffer = 0.001 + (agg_bias.abs() * 0.003);
-    entry = if direction == tredo_core::TradeDirection::Long {
+    let entry = if direction == tredo_core::TradeDirection::Long {
         current_price.max(pivots.pivot * (1.0 + breakout_buffer))
     } else {
         current_price.min(pivots.pivot * (1.0 - breakout_buffer))
@@ -282,7 +285,11 @@ pub fn compute_autonomous_levels(
         entry - risk * rr_multiplier
     };
 
-    let rr = if risk > 0.0 { risk / (tp - entry).abs().max(0.0001) } else { 1.0 };
+    let rr = if risk > 0.0 {
+        risk / (tp - entry).abs().max(0.0001)
+    } else {
+        1.0
+    };
 
     // Constrain to rules
     let min_rr = 1.5;
@@ -296,7 +303,16 @@ pub fn compute_autonomous_levels(
         tp
     };
 
-    (entry, sl, final_tp, if risk > 0.0 { risk / (final_tp - entry).abs() } else { 2.0 })
+    (
+        entry,
+        sl,
+        final_tp,
+        if risk > 0.0 {
+            risk / (final_tp - entry).abs()
+        } else {
+            2.0
+        },
+    )
 }
 
 /// Check if a trading signal meets minimum quality thresholds
@@ -380,7 +396,9 @@ pub fn compute_stochastic(bars: &[OhlcvBar], period: usize) -> f64 {
     let high = recent.iter().map(|b| b.high).fold(f64::MIN, f64::max);
     let low = recent.iter().map(|b| b.low).fold(f64::MAX, f64::min);
     let close = bars.last().unwrap().close;
-    if high == low { return 50.0; }
+    if high == low {
+        return 50.0;
+    }
     ((close - low) / (high - low) * 100.0).clamp(0.0, 100.0)
 }
 
@@ -390,7 +408,9 @@ pub fn compute_relative_volume(bars: &[OhlcvBar]) -> f64 {
     }
     let vols: Vec<f64> = bars.iter().map(|b| b.volume).collect();
     let avg: f64 = vols.iter().take(vols.len() - 1).sum::<f64>() / (vols.len() - 1) as f64;
-    if avg <= 0.0 { return 1.0; }
+    if avg <= 0.0 {
+        return 1.0;
+    }
     (vols.last().copied().unwrap_or(avg) / avg).clamp(0.3, 3.0)
 }
 

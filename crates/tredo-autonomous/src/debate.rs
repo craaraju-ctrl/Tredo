@@ -10,7 +10,8 @@
 use crate::state::SharedState;
 use crate::{
     correlation_checker::CorrelationChecker, on_chain_data::OnChainData,
-    regime_detector::RegimeDetector, sentiment_analyzer::SentimentAnalyzer,
+    regime_classifier::RegimeClassifier, // Layer 2 Cognitive (moved out of ingestion)
+    sentiment_analyzer::SentimentAnalyzer,
     volatility_calculator::VolatilityCalculator,
 };
 use tredo_core::{AgentInput, MarketContext};
@@ -78,7 +79,7 @@ impl ProposerAgent {
         let (vol, _) = VolatilityCalculator::new(self.state.clone())
             .compute_volatility(&ctx.symbol, ctx.current_price)
             .await;
-        let regime = RegimeDetector::new(self.state.clone())
+        let regime = RegimeClassifier::new(self.state.clone())
             .detect_regime(&ctx.symbol, ctx.current_price)
             .await;
         let onchain = OnChainData::new(self.state.clone())
@@ -339,4 +340,49 @@ pub async fn run_debate(
     };
 
     (final_action, conf, reason, turns)
+}
+
+/// Conservative degradation policy for partial information / data outages.
+/// Called from StrategyDecision / fallback paths when skills fail to deliver clean outputs.
+/// >2 missing critical skills => hard HOLD with zero levels (safety first).
+/// This is the explicit safeguard against "trading with partial information".
+pub fn execute_conservative_degradation_policy(missing_skills_count: usize) -> DebateOutcome {
+    if missing_skills_count > 2 {
+        return DebateOutcome {
+            signal_approved: false,
+            final_direction: "HOLD".to_string(),
+            entry_level: 0.0,
+            adjusted_stop_loss: 0.0,
+            adjusted_take_profit: 0.0,
+            calculated_confidence: 0.0,
+            consensus_justification: "CRITICAL DATA DEGRADATION: More than 2 skills failed to return clean metrics. Trading paused for safety.".to_string(),
+        };
+    }
+
+    // Reduced-size signal using whatever operational paths remain.
+    // In production this would be a weighted subset of the debate above.
+    DebateOutcome {
+        signal_approved: true,
+        final_direction: "HOLD".to_string(), // conservative default even in reduced mode until full data
+        entry_level: 0.0,
+        adjusted_stop_loss: 0.0,
+        adjusted_take_profit: 0.0,
+        calculated_confidence: 0.1,
+        consensus_justification: format!(
+            "PARTIAL DATA DEGRADATION ({} skills missing). Using reduced evidence set; defaulting to HOLD until full perception restored.",
+            missing_skills_count
+        ),
+    }
+}
+
+/// Lightweight outcome struct for the conservative policy (mirrors what callers expect).
+#[derive(Clone, Debug)]
+pub struct DebateOutcome {
+    pub signal_approved: bool,
+    pub final_direction: String,
+    pub entry_level: f64,
+    pub adjusted_stop_loss: f64,
+    pub adjusted_take_profit: f64,
+    pub calculated_confidence: f64,
+    pub consensus_justification: String,
 }

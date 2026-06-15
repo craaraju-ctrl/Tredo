@@ -687,11 +687,7 @@ async fn trigger_orchestra_cycle(
 
     // Agentic trigger: only the symbol. The agent observes market data from state and decides
     // direction + its own entry/SL/TP using full analysis (indicators it computes, debate, memory, rules).
-    match state
-        .orchestrator
-        .run_full_pipeline(&sym)
-        .await
-    {
+    match state.orchestrator.run_full_pipeline(&sym).await {
         Ok(summary) => {
             let action = summary
                 .final_signal
@@ -1042,10 +1038,10 @@ async fn get_crypto_market(
     }))
 }
 
-async fn get_news() -> impl axum::response::IntoResponse {
+async fn get_news(State(state): State<WebState>) -> impl axum::response::IntoResponse {
     let client = reqwest::Client::new();
-    let fetcher = tredo_core::NewsFetcher::new(client, state.config.clone());  // free news APIs + keys (research: Alpha Vantage, Finnhub etc.)
-    // Fetch for a default symbol; in prod could take query param for active symbol
+    let fetcher = tredo_core::NewsFetcher::new(client, (*state.orchestrator.state.config).clone()); // free news APIs + keys (research: Alpha Vantage, Finnhub etc.)
+                                                                                                    // Fetch for a default symbol; in prod could take query param for active symbol
     let items = fetcher.fetch_headlines("NIFTY").await.unwrap_or_default();
     Json(serde_json::json!({ "symbol": "NIFTY", "items": items }))
 }

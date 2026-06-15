@@ -34,6 +34,11 @@ pub struct DisciplineRules {
     /// Keyed by skill name (e.g. "SentimentAnalyzer", "VolatilityCalculator").
     /// Adjusted by MetaControlAgent based on predictive accuracy over time.
     pub skill_weights: HashMap<String, f64>,
+    /// Monotonically increasing version of the rule set. Every MetaControl adaptation
+    /// that changes rules or weights bumps this. Used for memory versioning so that
+    /// similarity search in vector/episodic memory only recalls memories from compatible
+    /// rule regimes (prevents "self-lobotomy" from outdated memories).
+    pub rule_version: u32,
 }
 
 impl Default for DisciplineRules {
@@ -65,6 +70,7 @@ impl Default for DisciplineRules {
             red_folder_discipline: true,
             require_trend_filter: true,
             skill_weights,
+            rule_version: 1,
         }
     }
 }

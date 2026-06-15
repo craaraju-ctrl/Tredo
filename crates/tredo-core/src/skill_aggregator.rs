@@ -171,7 +171,7 @@ impl SkillAggregator {
     }
 
     /// Convenience: aggregate from an iterator of `AgentOutput`.
-    pub fn from_iter<I>(outputs: I) -> AggregatedSignal
+    pub fn from_outputs<I>(outputs: I) -> AggregatedSignal
     where
         I: IntoIterator<Item = AgentOutput>,
     {
@@ -185,7 +185,13 @@ mod tests {
     use super::*;
     use crate::agent::{AgentOutput, SkillDirection};
 
-    fn make_skill(name: &str, score: f64, confidence: f64, direction: SkillDirection, weight: f64) -> AgentOutput {
+    fn make_skill(
+        name: &str,
+        score: f64,
+        confidence: f64,
+        direction: SkillDirection,
+        weight: f64,
+    ) -> AgentOutput {
         AgentOutput::SkillResult {
             name: name.to_string(),
             score,
@@ -205,7 +211,13 @@ mod tests {
 
     #[test]
     fn test_single_bullish() {
-        let outputs = vec![make_skill("sentiment", 0.8, 0.6, SkillDirection::Bullish, 1.0)];
+        let outputs = vec![make_skill(
+            "sentiment",
+            0.8,
+            0.6,
+            SkillDirection::Bullish,
+            1.0,
+        )];
         let sig = SkillAggregator::aggregate(&outputs);
         assert!(sig.net_signal > 0.0);
         assert!(sig.is_bullish(None));
@@ -216,7 +228,13 @@ mod tests {
 
     #[test]
     fn test_single_bearish() {
-        let outputs = vec![make_skill("onchain", 0.3, 0.7, SkillDirection::Bearish, 1.0)];
+        let outputs = vec![make_skill(
+            "onchain",
+            0.3,
+            0.7,
+            SkillDirection::Bearish,
+            1.0,
+        )];
         let sig = SkillAggregator::aggregate(&outputs);
         assert!(sig.net_signal < 0.0);
         assert!(sig.is_bearish(None));
@@ -251,7 +269,13 @@ mod tests {
     #[test]
     fn test_summary_format() {
         // Use weight=1.0 so net_signal exceeds the default 0.15 bullish threshold.
-        let outputs = vec![make_skill("sentiment", 0.8, 0.6, SkillDirection::Bullish, 1.0)];
+        let outputs = vec![make_skill(
+            "sentiment",
+            0.8,
+            0.6,
+            SkillDirection::Bullish,
+            1.0,
+        )];
         let sig = SkillAggregator::aggregate(&outputs);
         let summary = sig.summary();
         assert!(summary.contains("BULLISH"));
@@ -287,12 +311,12 @@ mod tests {
     }
 
     #[test]
-    fn test_from_iter() {
+    fn test_from_outputs() {
         let outputs = vec![
             make_skill("a", 0.8, 0.6, SkillDirection::Bullish, 0.3),
             make_skill("b", 0.7, 0.5, SkillDirection::Bullish, 0.25),
         ];
-        let sig = SkillAggregator::from_iter(outputs.into_iter());
+        let sig = SkillAggregator::from_outputs(outputs);
         assert_eq!(sig.bullish_count, 2);
         assert!(sig.net_signal > 0.0);
     }

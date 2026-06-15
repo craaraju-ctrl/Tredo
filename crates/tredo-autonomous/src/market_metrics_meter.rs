@@ -5,7 +5,10 @@
 // Connects to: state (latest_metrics), memory pipelines (vector/episode snapshots for recall/self-evolution), WS (recompute on live price updates in loops), orchestrator pipeline (pre-identifier), news analyser synergy (sentiment+technicals).
 // No price points given to agent — meter only provides perception data; agent decides everything.
 
-use crate::helpers::{compute_atr, compute_bollinger_bands, compute_macd, compute_relative_volume, compute_rsi, compute_stochastic};
+use crate::helpers::{
+    compute_atr, compute_bollinger_bands, compute_macd, compute_relative_volume, compute_rsi,
+    compute_stochastic,
+};
 use crate::state::SharedState;
 use async_trait::async_trait;
 use chrono::Utc;
@@ -26,7 +29,7 @@ pub struct MetricsSnapshot {
     pub rel_volume: f64,
     pub volatility_20: f64,
     pub regime_hint: String, // "trending_bull" | "ranging" | "volatile" etc (from local + optional macro)
-    pub fib_382: f64, // simple retracement levels relative to recent swing
+    pub fib_382: f64,        // simple retracement levels relative to recent swing
     pub fib_618: f64,
     pub confluence_hint: f64, // 0-1 derived technical confluence (oversold+vol+regime)
     pub last_updated: chrono::DateTime<Utc>,
@@ -100,16 +103,19 @@ impl MarketMetricsMeter {
         snap.macd_hist = hist;
         snap.atr_pct = compute_atr(&bars, 14) / current_price.max(0.0001);
         let (bb_u, bb_m, bb_l) = compute_bollinger_bands(&bars, 20, 2.0);
-        snap.bb_upper = bb_u; snap.bb_mid = bb_m; snap.bb_lower = bb_l;
+        snap.bb_upper = bb_u;
+        snap.bb_mid = bb_m;
+        snap.bb_lower = bb_l;
         snap.stoch_k = compute_stochastic(&bars, 14);
         snap.rel_volume = compute_relative_volume(&bars);
         // Rough vol
         let mut rets = vec![];
         for i in 1..bars.len().min(25) {
-            let r = (bars[i].close - bars[i-1].close) / bars[i-1].close.max(0.0001);
+            let r = (bars[i].close - bars[i - 1].close) / bars[i - 1].close.max(0.0001);
             rets.push(r);
         }
-        snap.volatility_20 = rets.iter().map(|r| r*r).sum::<f64>().sqrt() / (rets.len() as f64).sqrt().max(1.0);
+        snap.volatility_20 =
+            rets.iter().map(|r| r * r).sum::<f64>().sqrt() / (rets.len() as f64).sqrt().max(1.0);
 
         // Simple fib from recent swing (last 30 bars high/low)
         let recent = &bars[bars.len().saturating_sub(30)..];
@@ -123,21 +129,41 @@ impl MarketMetricsMeter {
         let rsi = snap.rsi_14;
         let mac = snap.macd_hist;
         let vol = snap.volatility_20;
-        snap.regime_hint = if vol > 0.025 { "volatile".into() } else if rsi > 60.0 && mac > 0.0 { "trending_bull".into() } else if rsi < 40.0 && mac < 0.0 { "trending_bear".into() } else { "ranging".into() };
+        snap.regime_hint = if vol > 0.025 {
+            "volatile".into()
+        } else if rsi > 60.0 && mac > 0.0 {
+            "trending_bull".into()
+        } else if rsi < 40.0 && mac < 0.0 {
+            "trending_bear".into()
+        } else {
+            "ranging".into()
+        };
 
         let mut conf: f64 = 0.5;
-        if rsi < 32.0 { conf += 0.18; } // oversold bull setup
-        if rsi > 68.0 { conf -= 0.15; }
-        if mac > 0.0 && rsi > 45.0 { conf += 0.12; }
-        if snap.rel_volume > 1.4 { conf += 0.08; }
-        if vol < 0.012 { conf += 0.05; } // calm trend better
+        if rsi < 32.0 {
+            conf += 0.18;
+        } // oversold bull setup
+        if rsi > 68.0 {
+            conf -= 0.15;
+        }
+        if mac > 0.0 && rsi > 45.0 {
+            conf += 0.12;
+        }
+        if snap.rel_volume > 1.4 {
+            conf += 0.08;
+        }
+        if vol < 0.012 {
+            conf += 0.05;
+        } // calm trend better
         snap.confluence_hint = conf.clamp(0.2_f64, 0.92_f64);
 
         // === Optional API supplements (non-fatal, respect keys + rates) ===
         // Finnhub technical (if key) — example aggregate or rsi confirmation
         if !self.state.config.finnhub_key.is_empty() {
             // In production would call /technical-indicator and blend; here note source and slight adjust
-            if snap.rsi_14 < 35.0 { snap.confluence_hint = (snap.confluence_hint + 0.05).min(0.95); }
+            if snap.rsi_14 < 35.0 {
+                snap.confluence_hint = (snap.confluence_hint + 0.05).min(0.95);
+            }
             snap.sources.push("finnhub".into());
         }
         if !self.state.config.polygon_api_key.is_empty() {
@@ -146,7 +172,9 @@ impl MarketMetricsMeter {
         // CoinGecko free for crypto volume confirmation
         if symbol == "BTC" || symbol == "ETH" || symbol == "SOL" {
             // local already strong; mark for transparency
-            if !snap.sources.iter().any(|s| s.contains("coingecko")) { snap.sources.push("coingecko_public".into()); }
+            if !snap.sources.iter().any(|s| s.contains("coingecko")) {
+                snap.sources.push("coingecko_public".into());
+            }
         }
         if !self.state.config.fred_api_key.is_empty() {
             // Macro would bias regime_hint e.g. high rates -> more ranging; stub note
@@ -155,7 +183,7 @@ impl MarketMetricsMeter {
 
         // Connect to memory: persist a compact snapshot for vector recall (agent remembers "when RSI was 28 + high rel vol, what I did")
         // Best effort (the vector store is in state; episodes for closed trades capture full context via OutcomeProcessor)
-        let recall_str = format!(
+        let _recall_str = format!(
             "metrics_meter {} rsi={:.1} macd_hist={:.3} atr={:.2}% vol20={:.2}% regime={} conf={:.2} relvol={:.1}",
             symbol, snap.rsi_14, snap.macd_hist, snap.atr_pct*100.0, snap.volatility_20*100.0, snap.regime_hint, snap.confluence_hint, snap.rel_volume
         );
@@ -168,7 +196,11 @@ impl MarketMetricsMeter {
     /// Convenience for MI / pipeline: compute + write to state.latest_metrics
     pub async fn compute_and_store(&self, symbol: &str, price: f64) -> MetricsSnapshot {
         let snap = self.compute(symbol, price).await;
-        self.state.latest_metrics.write().await.insert(symbol.to_string(), snap.clone());
+        self.state
+            .latest_metrics
+            .write()
+            .await
+            .insert(symbol.to_string(), snap.clone());
         snap
     }
 }
@@ -187,23 +219,40 @@ impl AgentSkill for MarketMetricsMeter {
         input: &AgentInput,
     ) -> Result<AgentOutput, Box<dyn Error + Send + Sync>> {
         if let AgentInput::ConfluenceRequest { context } = input {
-            let snap = self.compute_and_store(&context.symbol, context.current_price).await;
+            let snap = self
+                .compute_and_store(&context.symbol, context.current_price)
+                .await;
             // Derive directional-ish score from meter (strong when oversold + bull regime or overbought + bear)
             let mut score = 0.5;
-            if snap.rsi_14 < 35.0 && snap.regime_hint.contains("bull") { score = 0.78; }
-            else if snap.rsi_14 > 65.0 && snap.regime_hint.contains("bear") { score = 0.22; }
-            else if snap.macd_hist > 0.0 && snap.rsi_14 > 48.0 { score = 0.65; }
-            else if snap.macd_hist < 0.0 && snap.rsi_14 < 52.0 { score = 0.35; }
+            if snap.rsi_14 < 35.0 && snap.regime_hint.contains("bull") {
+                score = 0.78;
+            } else if snap.rsi_14 > 65.0 && snap.regime_hint.contains("bear") {
+                score = 0.22;
+            } else if snap.macd_hist > 0.0 && snap.rsi_14 > 48.0 {
+                score = 0.65;
+            } else if snap.macd_hist < 0.0 && snap.rsi_14 < 52.0 {
+                score = 0.35;
+            }
             score = (score + (snap.confluence_hint - 0.5) * 0.3).clamp(0.15, 0.88);
 
             println!(
                 "[Skill] {} executed for {}: tech_score={:.2} rsi={:.1} regime={} (meter tool)",
-                self.name(), context.symbol, score, snap.rsi_14, snap.regime_hint
+                self.name(),
+                context.symbol,
+                score,
+                snap.rsi_14,
+                snap.regime_hint
             );
             Ok(AgentOutput::SkillResult {
                 name: self.name().to_string(),
                 score,
-                note: format!("rsi={:.1} macd={:.2} atr%={:.2} regime={}", snap.rsi_14, snap.macd_hist, snap.atr_pct*100.0, snap.regime_hint),
+                note: format!(
+                    "rsi={:.1} macd={:.2} atr%={:.2} regime={}",
+                    snap.rsi_14,
+                    snap.macd_hist,
+                    snap.atr_pct * 100.0,
+                    snap.regime_hint
+                ),
                 confidence: 0.72,
                 direction: if score > 0.58 {
                     tredo_core::agent::SkillDirection::Bullish

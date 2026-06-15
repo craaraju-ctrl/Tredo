@@ -1,13 +1,11 @@
-use crate::debate::run_debate;
-use crate::helpers::{calculate_position_size, calculate_risk_reward, get_indian_session_info};
+use crate::helpers::get_indian_session_info;
 use crate::state::SharedState;
 use crate::types::TradeSignal;
-use async_trait::async_trait;
 use chrono::Utc;
 use std::error::Error;
 use tredo_core::{
-    calculate_confluence_score, calculate_pivot_points, validate_trade_setup, Agent, AgentInput,
-    AgentOutput, AgentTier, MarketContext,
+    calculate_confluence_score, calculate_pivot_points, validate_trade_setup, AgentInput,
+    MarketContext,
 }; // Full debate aggregator wired (Proposer etc using new skills)
 
 pub struct StrategyDecisionAgent {
@@ -47,7 +45,8 @@ impl StrategyDecisionAgent {
             let a = self.state.last_aggregated_signal.read().await;
             a.clone()
         };
-        self.generate_signal_with_aggregation(symbol, current_price, aggregated.as_ref()).await
+        self.generate_signal_with_aggregation(symbol, current_price, aggregated.as_ref())
+            .await
     }
 
     /// Full agentic decision with explicit AggregatedSignal (preferred path).
@@ -95,7 +94,7 @@ impl StrategyDecisionAgent {
         let session = get_indian_session_info(Utc::now());
 
         // Pull existing MI data (patterns, regime, forecast, aggregated from skills)
-        let forecast_summary = {
+        let _forecast_summary = {
             let last = self.state.last_forecast.read().await;
             match last.as_ref() {
                 Some(v) => v["summary"]
@@ -116,7 +115,7 @@ impl StrategyDecisionAgent {
             }
         };
 
-        let portfolio_heat: f64 = {
+        let _portfolio_heat: f64 = {
             let total_risk: f64 = portfolio.open_positions.iter().map(|p| p.risk_amount).sum();
             if portfolio.total_equity > 0.0 {
                 total_risk / portfolio.total_equity
@@ -124,9 +123,9 @@ impl StrategyDecisionAgent {
                 0.0
             }
         };
-        let consecutive_losses = portfolio.consecutive_losses;
-        let daily_pnl_pct = portfolio.daily_pnl_pct;
-        let total_trades_today = portfolio.total_trades_today;
+        let _consecutive_losses = portfolio.consecutive_losses;
+        let _daily_pnl_pct = portfolio.daily_pnl_pct;
+        let _total_trades_today = portfolio.total_trades_today;
 
         // === AGENTIC INDICATOR ANALYSIS (no external price points) ===
         let rsi = crate::helpers::compute_rsi(&bars, 14);
@@ -135,8 +134,8 @@ impl StrategyDecisionAgent {
             // Reuse vol calc if available, else estimate
             if bars.len() >= 14 {
                 let mut tr_sum = 0.0;
-                for i in 1..bars.len() {
-                    let tr = (bars[i].high - bars[i].low).abs();
+                for bar in bars.iter().skip(1) {
+                    let tr = (bar.high - bar.low).abs();
                     tr_sum += tr;
                 }
                 tr_sum / bars.len() as f64 / current_price
@@ -164,29 +163,42 @@ impl StrategyDecisionAgent {
 
         // === CONNECTED: Pull NewsAnalyser + MetricsMeter snapshots (set by MI / loops) for richer agent reasoning ===
         // These feed the agent's own analysis + autonomous level calc via memory/debate/agg influence. Agent decides.
-        let (news_ctx, meter) = {
+        let (_news_ctx, meter) = {
             let n = self.state.latest_news.read().await;
             let m = self.state.latest_metrics.read().await;
             (n.get(symbol).cloned(), m.get(symbol).cloned())
         };
         let meter_atr = meter.as_ref().map(|m| m.atr_pct).unwrap_or(atr_pct);
-        let meter_regime = meter.as_ref().map(|m| m.regime_hint.clone()).unwrap_or_else(|| "ranging".into());
+        let _meter_regime = meter
+            .as_ref()
+            .map(|m| m.regime_hint.clone())
+            .unwrap_or_else(|| "ranging".into());
         if let Some(m) = &meter {
-            println!("[Strategy] using meter snapshot: rsi={:.1} conf={:.2} regime={}", m.rsi_14, m.confluence_hint, m.regime_hint);
+            println!(
+                "[Strategy] using meter snapshot: rsi={:.1} conf={:.2} regime={}",
+                m.rsi_14, m.confluence_hint, m.regime_hint
+            );
         }
 
-        let (entry, stop_loss, take_profit, risk_reward_ratio) = crate::helpers::compute_autonomous_levels(
-            symbol,
-            current_price,
-            &pivots,
-            &patterns_for_levels,
-            *self.state.market_regime.read().await.as_ref().unwrap_or(&crate::types::MarketRegime::Ranging),
-            rsi,
-            macd_hist,
-            meter_atr,
-            &rules,
-            aggregated_signal, // Pass the cross-skill consensus so levels respect the aggregated vote (news_analyser + meter skills included)
-        );
+        let (entry, stop_loss, take_profit, risk_reward_ratio) =
+            crate::helpers::compute_autonomous_levels(
+                symbol,
+                current_price,
+                &pivots,
+                &patterns_for_levels,
+                *self
+                    .state
+                    .market_regime
+                    .read()
+                    .await
+                    .as_ref()
+                    .unwrap_or(&crate::types::MarketRegime::Ranging),
+                rsi,
+                macd_hist,
+                meter_atr,
+                &rules,
+                aggregated_signal, // Pass the cross-skill consensus so levels respect the aggregated vote (news_analyser + meter skills included)
+            );
 
         // === REAL AGGREGATOR PASS-THROUGH (Gap 1 fix) ===
         // Pull the AggregatedSignal that was computed in MarketIntelligence.
@@ -198,12 +210,15 @@ impl StrategyDecisionAgent {
         };
 
         // Debate for final reasoning (agentic multi-agent) — now receives the aggregated skills consensus
-        let debate_input = AgentInput::ConfluenceRequest { context: context.clone() };
+        let debate_input = AgentInput::ConfluenceRequest {
+            context: context.clone(),
+        };
         let (debate_action, debate_conf, debate_reason, _turns) = crate::debate::run_debate(
             self.state.clone(),
             &debate_input,
             aggregated_signal.as_ref(),
-        ).await;
+        )
+        .await;
 
         let direction = if debate_action == "BUY" {
             tredo_core::TradeDirection::Long
@@ -211,7 +226,11 @@ impl StrategyDecisionAgent {
             tredo_core::TradeDirection::Short
         } else {
             // fallback to levels logic
-            if entry > current_price { tredo_core::TradeDirection::Long } else { tredo_core::TradeDirection::Short }
+            if entry > current_price {
+                tredo_core::TradeDirection::Long
+            } else {
+                tredo_core::TradeDirection::Short
+            }
         };
 
         if debate_action == "HOLD" || debate_conf < 0.45 {
@@ -235,8 +254,16 @@ impl StrategyDecisionAgent {
                     Ok(results) if !results.is_empty() => {
                         let mut lines = vec!["Vector memory regime matches:".to_string()];
                         for r in &results {
-                            let regret = r.regret_score.map(|s| format!(" regret={:.2}", s)).unwrap_or_default();
-                            lines.push(format!("  {} (sim={:.0}%){}", r.summary_text, r.similarity * 100.0, regret));
+                            let regret = r
+                                .regret_score
+                                .map(|s| format!(" regret={:.2}", s))
+                                .unwrap_or_default();
+                            lines.push(format!(
+                                "  {} (sim={:.0}%){}",
+                                r.summary_text,
+                                r.similarity * 100.0,
+                                regret
+                            ));
                         }
                         lines.join(" | ")
                     }
@@ -279,7 +306,9 @@ impl StrategyDecisionAgent {
         // Discipline gate (agentic rules still apply to self-generated levels)
         let discipline = validate_trade_setup(&context, &rules);
         if !discipline.passed {
-            println!("[StrategyDecisionAgent] Agent self-generated signal rejected by DisciplinedCore");
+            println!(
+                "[StrategyDecisionAgent] Agent self-generated signal rejected by DisciplinedCore"
+            );
             return Ok(None);
         }
 

@@ -278,7 +278,7 @@ impl SelfEvolutionValidator {
         for cycle_num in 0..cycles {
             for &symbol in symbols {
                 // Read current price from OHLCV history or portfolio
-                let price = {
+                let _price = {
                     let portfolio = self.orchestrator.state.portfolio.read().await;
                     let s = symbol.to_string();
                     if let Some(pos) = portfolio.open_positions.iter().find(|p| p.symbol == s) {
@@ -293,7 +293,7 @@ impl SelfEvolutionValidator {
                 };
 
                 // Determine direction based on simple price momentum
-                let direction = {
+                let _direction = {
                     let history = self.orchestrator.state.ohlcv_history.read().await;
                     let has_bars = history.get(symbol).map(|h| h.len() >= 5).unwrap_or(false);
                     if has_bars {
@@ -314,7 +314,7 @@ impl SelfEvolutionValidator {
                 // Run the full pipeline
                 let pipeline_result = match self
                     .orchestrator
-                    .run_full_pipeline(symbol)  // agentic: agent decides levels from its own analysis
+                    .run_full_pipeline(symbol) // agentic: agent decides levels from its own analysis
                     .await
                 {
                     Ok(p) => p,

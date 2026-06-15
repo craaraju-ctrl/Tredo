@@ -280,7 +280,12 @@ impl MarketIntelligenceAgent {
             *last_agg = Some(aggregated.clone());
         }
         let agg_summary = if !skill_outputs.is_empty() {
-            format!(" | AGGREGATED net={:+.3} conv={:.0}% {}", aggregated.net_signal, aggregated.conviction * 100.0, aggregated.summary())
+            format!(
+                " | AGGREGATED net={:+.3} conv={:.0}% {}",
+                aggregated.net_signal,
+                aggregated.conviction * 100.0,
+                aggregated.summary()
+            )
         } else {
             String::new()
         };

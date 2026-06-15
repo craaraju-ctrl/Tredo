@@ -645,15 +645,15 @@ async fn trigger_orchestra_cycle(state: State<'_, Mutex<AppState>>) -> Result<St
     };
 
     if let Some(orch) = orch_clone {
-        let dir = TradeDirection::Long;
+        let _dir = TradeDirection::Long;
         let sym = "NIFTY";
-        let entry = 24500.0;
-        let stop = 24200.0;
-        let target = 25000.0;
+        let _entry = 24500.0;
+        let _stop = 24200.0;
+        let _target = 25000.0;
 
         // Agentic call — only the symbol. The Tredo agent decides direction and its own levels
         // from market data + full analysis (indicators, debate, memory, rules).
-        match orch.run_full_pipeline(&sym).await {
+        match orch.run_full_pipeline(sym).await {
             Ok(summary) => {
                 let action = summary
                     .final_signal

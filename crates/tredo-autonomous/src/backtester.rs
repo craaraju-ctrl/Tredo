@@ -31,12 +31,12 @@ impl AutonomousBacktester {
             } else {
                 ctx.current_price - slip
             };
-            let sl = adjusted_entry * 0.99;
-            let tp = adjusted_entry * 1.02;
+            let _sl = adjusted_entry * 0.99;
+            let _tp = adjusted_entry * 1.02;
 
             let summary = self
                 .orchestrator
-                .run_full_pipeline(symbol)  // agentic: agent decides levels itself
+                .run_full_pipeline(symbol) // agentic: agent decides levels itself
                 .await?;
             summaries.push(summary.clone());
 

@@ -30,7 +30,7 @@
 use crate::types::{RiskAnalysis, TradeSignal};
 use std::error::Error;
 use std::sync::Arc;
-use tredo_core::{Agent, TradeDirection};
+use tredo_core::Agent;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // IDENTIFIER — scans the market and identifies potential opportunities
@@ -381,7 +381,8 @@ impl Tredo {
         symbol: &str,
         current_price: f64,
     ) -> Result<Option<TradeSignal>, Box<dyn Error + Send + Sync>> {
-        self.run_executer_with_aggregation(symbol, current_price, None).await
+        self.run_executer_with_aggregation(symbol, current_price, None)
+            .await
     }
 
     /// Agentic entry point that accepts the AggregatedSignal computed by MarketIntelligence.
