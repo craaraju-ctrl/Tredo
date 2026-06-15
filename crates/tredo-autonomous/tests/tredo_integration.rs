@@ -511,7 +511,10 @@ async fn test_verifier_with_open_position() {
     );
 
     // Run verifier — should still work with open position
-    let result = orch.tredo().run_verifier("NIFTY", 24_500.0, equity, 1).await;
+    let result = orch
+        .tredo()
+        .run_verifier("NIFTY", 24_500.0, equity, 1)
+        .await;
     assert!(
         result.is_ok(),
         "Verifier should handle portfolios with open positions"
@@ -542,7 +545,10 @@ async fn test_verifier_drawdown_halt() {
     }
 
     let equity = get_equity(&orch.state).await;
-    let result = orch.tredo().run_verifier("NIFTY", 24_500.0, equity, 1).await;
+    let result = orch
+        .tredo()
+        .run_verifier("NIFTY", 24_500.0, equity, 1)
+        .await;
 
     assert!(
         result.is_ok(),
@@ -794,9 +800,10 @@ async fn test_multiple_pipeline_runs() {
         seed_ohlcv(&orch.state, symbol, *price).await;
 
         let (disc_ok, conf, pivots) = orch
-            .tredo().run_identifier(symbol, *price, (i + 1) as u64)
-        .await
-        .expect("Identifier should succeed");
+            .tredo()
+            .run_identifier(symbol, *price, (i + 1) as u64)
+            .await
+            .expect("Identifier should succeed");
 
         println!(
             "  [{}] {}: disc={}, conf={:.1}%, pivot={:.2}",
@@ -913,7 +920,11 @@ async fn test_portfolio_management_via_tredo() {
         let outcome_ep = tredo_autonomous::episode_store::ClosedEpisode {
             id: format!("ep-{}-{}", "NIFTY", Utc::now().timestamp()),
             symbol: "NIFTY".to_string(),
-            direction: if signal.direction == TradeDirection::Long { "Long".into() } else { "Short".into() },
+            direction: if signal.direction == TradeDirection::Long {
+                "Long".into()
+            } else {
+                "Short".into()
+            },
             entry_price: signal.entry_price,
             exit_price: signal.take_profit,
             stop_loss: signal.stop_loss,
@@ -1001,8 +1012,6 @@ async fn test_portfolio_management_via_tredo() {
 
     // Clean up
     let _ = orch.portfolio.close_position("NIFTY", 24_800.0).await;
-
-
 
     // Verify final state (tolerant for pure agentic HOLD path from NewsAnalyser+MetricsMeter)
     {

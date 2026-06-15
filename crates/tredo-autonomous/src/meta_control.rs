@@ -37,7 +37,6 @@ impl MetaControlAgent {
         println!("[MetaControlAgent] tune_skill_weights stub (full impl in history)");
         Ok(vec![])
     }
-
 }
 
 /// Result of a weekly meta-review cycle.
@@ -49,14 +48,24 @@ pub struct WeeklyReviewReport {
 
 impl MetaControlAgent {
     /// Reviews recent episodes, identifies high-regret patterns, and proposes rule changes.
-    pub async fn weekly_review(&self, _days_back: i64) -> Result<WeeklyReviewReport, Box<dyn Error + Send + Sync>> {
+    pub async fn weekly_review(
+        &self,
+        _days_back: i64,
+    ) -> Result<WeeklyReviewReport, Box<dyn Error + Send + Sync>> {
         let stats = self.state.episode_store.session_stats();
         let report = WeeklyReviewReport {
             total_episodes_reviewed: stats.trades_today as usize,
-            high_regret_episodes: if stats.avg_regret > 0.5 { stats.trades_today as usize } else { 0 },
+            high_regret_episodes: if stats.avg_regret > 0.5 {
+                stats.trades_today as usize
+            } else {
+                0
+            },
             changes_applied: false,
         };
-        println!("[MetaControlAgent] Weekly review: {} episodes, regret={:.2}", stats.trades_today, stats.avg_regret);
+        println!(
+            "[MetaControlAgent] Weekly review: {} episodes, regret={:.2}",
+            stats.trades_today, stats.avg_regret
+        );
         Ok(report)
     }
 }
@@ -83,7 +92,11 @@ impl Clone for EvolvedMetaControl {
 }
 
 impl EvolvedMetaControl {
-    pub fn new(db: crate::episode_store::EpisodeStore, learning_sensitivity: f64, initial_version: u32) -> Self {
+    pub fn new(
+        db: crate::episode_store::EpisodeStore,
+        learning_sensitivity: f64,
+        initial_version: u32,
+    ) -> Self {
         Self {
             db,
             learning_sensitivity,
@@ -99,7 +112,10 @@ impl EvolvedMetaControl {
         &self,
         _current_config: &crate::risk_guardian::RiskGuardianConfig,
     ) -> Option<crate::risk_guardian::RiskGuardianConfig> {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         let active_version = self.current_version.load(Ordering::SeqCst);
 
         // System cannot revert past the genesis rules configuration
@@ -114,33 +130,43 @@ impl EvolvedMetaControl {
         };
 
         // Query the last 15 closed trades processed under this specific rule version
-        let post_adaptation_trades = self.db.load_recent_closed_trades(15, Some(active_version)).unwrap_or_default();
+        let post_adaptation_trades = self
+            .db
+            .load_recent_closed_trades(15, Some(active_version))
+            .unwrap_or_default();
         if post_adaptation_trades.len() < 15 {
             // Post-adaptation evaluation window is still gathering clean baseline samples
             return None;
         }
 
         // Calculate realized post-adaptation execution metrics
-        let wins = post_adaptation_trades.iter().filter(|t| t.was_correct).count();
+        let wins = post_adaptation_trades
+            .iter()
+            .filter(|t| t.was_correct)
+            .count();
         let realized_win_rate = wins as f64 / post_adaptation_trades.len() as f64;
-        
+
         let total_regret: f64 = post_adaptation_trades.iter().map(|t| t.regret_score).sum();
         let realized_avg_regret = total_regret / post_adaptation_trades.len() as f64;
 
         // Evaluate degradation boundaries: win rate drop or a major regret escalation
-        let win_rate_degraded = realized_win_rate < (active_snapshot.baseline_win_rate * (1.0 - self.degradation_threshold_pct));
-        let regret_escalated = realized_avg_regret > (active_snapshot.baseline_avg_regret * (1.0 + self.degradation_threshold_pct));
+        let win_rate_degraded = realized_win_rate
+            < (active_snapshot.baseline_win_rate * (1.0 - self.degradation_threshold_pct));
+        let regret_escalated = realized_avg_regret
+            > (active_snapshot.baseline_avg_regret * (1.0 + self.degradation_threshold_pct));
 
         if win_rate_degraded || regret_escalated {
             // Reversion criteria triggered. Fetch the preceding rules snapshot configuration.
             let fallback_version = active_version - 1;
             if let Ok(Some(previous_snapshot)) = self.db.get_rule_snapshot(fallback_version) {
-                let restored_config: crate::risk_guardian::RiskGuardianConfig = serde_json::from_str(&previous_snapshot.config_json).unwrap_or_else(|_| {
-                    crate::risk_guardian::RiskGuardianConfig::default_fallback()
-                });
+                let restored_config: crate::risk_guardian::RiskGuardianConfig =
+                    serde_json::from_str(&previous_snapshot.config_json).unwrap_or_else(|_| {
+                        crate::risk_guardian::RiskGuardianConfig::default_fallback()
+                    });
 
                 // Revert system atomics back to the past baseline coordinates
-                self.current_version.store(fallback_version, Ordering::SeqCst);
+                self.current_version
+                    .store(fallback_version, Ordering::SeqCst);
 
                 let log_message = format!(
                     "RULE_REVERT v{} -> v{}: Degradation detected. Current WinRate: {:.2}% (Baseline: {:.2}%), Regret: {:.4} (Baseline: {:.4}%)",
@@ -148,8 +174,15 @@ impl EvolvedMetaControl {
                 );
 
                 // Commit the audit log across the permanent Chain-of-Thought storage lines
-                let _ = self.db.record_rule_change("RULE_REVERT", &serde_json::to_string(&restored_config).unwrap_or_default(), &log_message, now);
-                let _ = self.db.insert_cot_log("meta_control", "MetaControl", &log_message, now);
+                let _ = self.db.record_rule_change(
+                    "RULE_REVERT",
+                    &serde_json::to_string(&restored_config).unwrap_or_default(),
+                    &log_message,
+                    now,
+                );
+                let _ = self
+                    .db
+                    .insert_cot_log("meta_control", "MetaControl", &log_message, now);
 
                 return Some(restored_config);
             }
@@ -165,7 +198,10 @@ impl EvolvedMetaControl {
         _current_regime: crate::regime_classifier::MarketRegime,
         regime_stable_for_ticks: usize,
     ) -> Option<crate::risk_guardian::RiskGuardianConfig> {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
 
         // Check if an immediate performance regression requires a rollback sequence first
         if let Some(reverted_config) = self.check_and_revert_if_degraded(current_config) {
@@ -186,12 +222,17 @@ impl EvolvedMetaControl {
             let mut evolved_config = current_config.clone();
             let reduction = 1.0 - (self.learning_sensitivity * average_regret);
 
-            evolved_config.max_risk_per_trade_pct = (current_config.max_risk_per_trade_pct * reduction).max(0.005);
-            evolved_config.absolute_max_leverage = ((current_config.absolute_max_leverage as f64) * reduction).round() as u32;
+            evolved_config.max_risk_per_trade_pct =
+                (current_config.max_risk_per_trade_pct * reduction).max(0.005);
+            evolved_config.absolute_max_leverage =
+                ((current_config.absolute_max_leverage as f64) * reduction).round() as u32;
             evolved_config.absolute_max_leverage = evolved_config.absolute_max_leverage.max(1);
 
             let next_version = self.current_version.fetch_add(1, Ordering::SeqCst) + 1;
-            let reasoning = format!("RULE_ADAPT v{}: Multi-trade regret at {:.4}. Tightening parameter boundaries.", next_version, average_regret);
+            let reasoning = format!(
+                "RULE_ADAPT v{}: Multi-trade regret at {:.4}. Tightening parameter boundaries.",
+                next_version, average_regret
+            );
 
             // Compute past baselines to store inside the snapshot anchor row
             let wins = recent_trades.iter().filter(|&&r| r == 0.0).count();
@@ -206,8 +247,15 @@ impl EvolvedMetaControl {
             };
 
             let _ = self.db.insert_rule_snapshot(snapshot);
-            let _ = self.db.record_rule_change("max_risk_per_trade_pct", &evolved_config.max_risk_per_trade_pct.to_string(), &reasoning, now);
-            let _ = self.db.insert_cot_log("meta_control", "MetaControl", &reasoning, now);
+            let _ = self.db.record_rule_change(
+                "max_risk_per_trade_pct",
+                &evolved_config.max_risk_per_trade_pct.to_string(),
+                &reasoning,
+                now,
+            );
+            let _ = self
+                .db
+                .insert_cot_log("meta_control", "MetaControl", &reasoning, now);
 
             return Some(evolved_config);
         }

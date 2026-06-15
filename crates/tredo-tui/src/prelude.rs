@@ -8,4 +8,3 @@ pub(crate) use ratatui::{
     widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Wrap},
     Frame,
 };
-

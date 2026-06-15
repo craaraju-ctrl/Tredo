@@ -1,9 +1,9 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-use crate::state::SharedState;
-use crate::regime_classifier::RegimeClassifier;
 use crate::debate_orchestrator::DebateOrchestrator;
-use crate::skills::{SkillResult, ConfluenceScorer};
-use crate::risk_guardian::{RiskGuardian, ProposedTrade, GuardianPortfolioContext};
+use crate::regime_classifier::RegimeClassifier;
+use crate::risk_guardian::{GuardianPortfolioContext, ProposedTrade, RiskGuardian};
+use crate::skills::{ConfluenceScorer, SkillResult};
+use crate::state::SharedState;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrchestratorState {
@@ -62,8 +62,14 @@ impl ExecutionCoordinator {
         // FSM Transition 2: Scanning -> Evaluating (with regime analysis)
         if self.state == OrchestratorState::Scanning {
             let last_price = prices[prices.len() - 1];
-            let regime = self.regime_classifier.detect_regime(&self.symbol, last_price).await;
-            println!("[FSM] Transitioning: Scanning -> Evaluating (Regime: {:?})", regime);
+            let regime = self
+                .regime_classifier
+                .detect_regime(&self.symbol, last_price)
+                .await;
+            println!(
+                "[FSM] Transitioning: Scanning -> Evaluating (Regime: {:?})",
+                regime
+            );
             self.state = OrchestratorState::Evaluating;
         }
 

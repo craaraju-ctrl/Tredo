@@ -4,8 +4,7 @@
 use crate::prelude::*;
 use crate::{
     render_cot, render_dashboard, render_help, render_models, render_positions, render_rules,
-    render_tree, render_watchlist,
-    AppState, Tab, ALL_BUTTONS,
+    render_tree, render_watchlist, AppState, Tab, ALL_BUTTONS,
 };
 
 /// Main UI renderer — layouts the screen and delegates to tab-specific renderers.
@@ -133,11 +132,7 @@ pub fn ui(f: &mut Frame, app: &mut AppState) {
 
     // ── Footer / status — read health indicators from /api/health ─────────
     let footer_text = if let Some(h) = &app.health {
-        let k = if h
-            .get("kronos")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false)
-        {
+        let k = if h.get("kronos").and_then(|v| v.as_bool()).unwrap_or(false) {
             "🔷"
         } else {
             "❌"
@@ -225,9 +220,7 @@ pub fn render_button_bar(f: &mut Frame, area: Rect, app: &mut AppState) {
 
         let (text_style, border_color) = if running {
             (
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::DIM),
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::DIM),
                 Color::Cyan,
             )
         } else if focused {
@@ -269,13 +262,18 @@ pub fn render_button_bar(f: &mut Frame, area: Rect, app: &mut AppState) {
                         .fg(Color::Yellow)
                         .add_modifier(Modifier::BOLD),
                 ),
+                Span::styled("  —  Press ", Style::default().fg(Color::DarkGray)),
                 Span::styled(
-                    "  —  Press ",
-                    Style::default().fg(Color::DarkGray),
+                    "y",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled("y", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
                 Span::styled(" to confirm, ", Style::default().fg(Color::DarkGray)),
-                Span::styled("n", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "n",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" / ", Style::default().fg(Color::DarkGray)),
                 Span::styled("Esc", Style::default().fg(Color::Red)),
                 Span::styled(" to cancel", Style::default().fg(Color::DarkGray)),

@@ -9,7 +9,8 @@
 
 use crate::state::SharedState;
 use crate::{
-    correlation_checker::CorrelationChecker, on_chain_data::OnChainData,
+    correlation_checker::CorrelationChecker,
+    on_chain_data::OnChainData,
     regime_classifier::RegimeClassifier, // Layer 2 Cognitive (moved out of ingestion)
     sentiment_analyzer::SentimentAnalyzer,
     volatility_calculator::VolatilityCalculator,

@@ -15,18 +15,9 @@ pub fn render_cot(f: &mut Frame, area: Rect, app: &AppState) {
                 .get("timestamp")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            let agent = entry
-                .get("agent")
-                .and_then(|v| v.as_str())
-                .unwrap_or("?");
-            let action = entry
-                .get("action")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let reason = entry
-                .get("reason")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let agent = entry.get("agent").and_then(|v| v.as_str()).unwrap_or("?");
+            let action = entry.get("action").and_then(|v| v.as_str()).unwrap_or("");
+            let reason = entry.get("reason").and_then(|v| v.as_str()).unwrap_or("");
 
             let color = match agent {
                 a if a.contains("Identifier") || a.contains("Market") => Color::Green,
@@ -44,9 +35,7 @@ pub fn render_cot(f: &mut Frame, area: Rect, app: &AppState) {
                 ),
                 Span::styled(
                     format!("{}: ", agent),
-                    Style::default()
-                        .fg(color)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(color).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(action, Style::default().fg(Color::White)),
                 Span::raw("  "),

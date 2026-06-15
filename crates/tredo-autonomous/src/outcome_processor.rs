@@ -3,9 +3,9 @@ use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::episode_store::EpisodeStore;
-use crate::weight_tuner::AttributionEngine;
 use crate::meta_control::EvolvedMetaControl;
 use crate::regime_classifier::MarketRegime;
+use crate::weight_tuner::AttributionEngine;
 
 #[derive(Debug)]
 pub enum ProcessorError {
@@ -16,15 +16,19 @@ pub enum ProcessorError {
 impl std::fmt::Display for ProcessorError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ProcessorError::DatabaseError(msg) => write!(f, "Database persistence failure: {}", msg),
-            ProcessorError::MissingMetadata(id) => write!(f, "Missing pre-trade metadata for episode {}", id),
+            ProcessorError::DatabaseError(msg) => {
+                write!(f, "Database persistence failure: {}", msg)
+            }
+            ProcessorError::MissingMetadata(id) => {
+                write!(f, "Missing pre-trade metadata for episode {}", id)
+            }
         }
     }
 }
 
 impl std::error::Error for ProcessorError {}
 
-/// The context containing the state of the skills and risk parameters 
+/// The context containing the state of the skills and risk parameters
 /// recorded at the exact moment the trade was opened.
 #[derive(Debug, Clone)]
 pub struct PreTradeSnapshot {
@@ -89,9 +93,8 @@ impl OutcomeProcessor {
             let mut map = self.pending_snapshots.write().map_err(|e| {
                 ProcessorError::MissingMetadata(format!("Lock acquisition failed: {}", e))
             })?;
-            map.remove(episode_id).ok_or_else(|| {
-                ProcessorError::MissingMetadata(episode_id.to_string())
-            })?
+            map.remove(episode_id)
+                .ok_or_else(|| ProcessorError::MissingMetadata(episode_id.to_string()))?
         };
 
         // 2. Calculate actual return characteristics of this trade
@@ -132,7 +135,8 @@ impl OutcomeProcessor {
         );
 
         // 4. Commit results to relational tables (SQLite)
-        self.db.close_episode(&closed_record, &pre_trade.skill_predictions)
+        self.db
+            .close_episode(&closed_record, &pre_trade.skill_predictions)
             .map_err(|e| ProcessorError::DatabaseError(format!("SQLite entry failed: {}", e)))?;
 
         // 5. Evaluate dynamic parameter risk scales based on regime stability
@@ -169,29 +173,30 @@ pub struct ClosedEpisodeRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use crate::episode_store::EpisodeStore;
-    use crate::weight_tuner::AttributionEngine;
     use crate::meta_control::EvolvedMetaControl; // or the wrapper
-    use crate::risk_guardian::RiskGuardianConfig;
     use crate::regime_classifier::MarketRegime;
+    use crate::risk_guardian::RiskGuardianConfig;
+    use crate::weight_tuner::AttributionEngine;
+    use std::collections::HashMap;
 
     #[tokio::test]
     async fn test_outcome_processor_learning_loop() {
         // 1. Initialize our persistent database mock connection
-        let db_store = EpisodeStore::open("file::memory:?cache=shared").expect("Failed to create in-memory EpisodeStore");
+        let db_store = EpisodeStore::open("file::memory:?cache=shared")
+            .expect("Failed to create in-memory EpisodeStore");
 
         // 2. Set up our analytical and learning engines with the symmetric math
         let base_learning_rate = 0.10; // 10% adjustments
         let weight_tuner = AttributionEngine::new(base_learning_rate);
-        
+
         let meta_control = EvolvedMetaControl::new(db_store.clone(), 0.05, 1);
-        
+
         let processor = OutcomeProcessor::new(db_store.clone(), weight_tuner, meta_control);
 
         // 3. Register a mock trade execution with snapshot metrics
         let episode_id = "test_episode_001".to_string();
-        
+
         let mut active_weights = HashMap::new();
         active_weights.insert("news_analyser".to_string(), 0.25);
         active_weights.insert("market_metrics_meter".to_string(), 0.25);
@@ -217,7 +222,7 @@ mod tests {
         let exit_price = 68250.0; // Represents a +5% profit before fees
         let current_regime = MarketRegime::TrendingBull;
         let regime_stable_for_ticks = 10; // Regime is highly stable, permitting learning updates
-        
+
         let current_config = RiskGuardianConfig::default_fallback();
 
         let (updated_weights, evolved_config) = processor
@@ -233,26 +238,39 @@ mod tests {
 
         // 5. Verify mathematical invariants and database integrity
         let sum_weights: f64 = updated_weights.values().sum();
-        assert!((sum_weights - 1.0).abs() < 1e-9, "Weights must always remain normalized to 1.0");
+        assert!(
+            (sum_weights - 1.0).abs() < 1e-9,
+            "Weights must always remain normalized to 1.0"
+        );
 
         let news_weight = updated_weights.get("news_analyser").copied().unwrap_or(0.0);
-        let metrics_weight = updated_weights.get("market_metrics_meter").copied().unwrap_or(0.0);
+        let metrics_weight = updated_weights
+            .get("market_metrics_meter")
+            .copied()
+            .unwrap_or(0.0);
         // news_analyser was more accurate (0.80 vs 0.60) → should get higher weight
-        assert!(news_weight > metrics_weight, "The more accurate skill must be assigned higher weight");
+        assert!(
+            news_weight > metrics_weight,
+            "The more accurate skill must be assigned higher weight"
+        );
 
-        assert!(evolved_config.is_none(), "MetaControl should not reduce risk during profitable periods");
+        assert!(
+            evolved_config.is_none(),
+            "MetaControl should not reduce risk during profitable periods"
+        );
     }
 
     #[tokio::test]
     async fn test_regime_stability_and_meta_control_risk_squeezing() {
-        let db_store = EpisodeStore::open("file::memory:?cache=shared").expect("Failed to create in-memory EpisodeStore");
+        let db_store = EpisodeStore::open("file::memory:?cache=shared")
+            .expect("Failed to create in-memory EpisodeStore");
 
         let weight_tuner = AttributionEngine::new(0.10);
         let meta_control = EvolvedMetaControl::new(db_store.clone(), 0.05, 1);
         let processor = OutcomeProcessor::new(db_store.clone(), weight_tuner, meta_control);
 
         let episode_id = "test_episode_unstable_002".to_string();
-        
+
         let mut active_weights = HashMap::new();
         active_weights.insert("news_analyser".to_string(), 0.50);
         active_weights.insert("market_metrics_meter".to_string(), 0.50);

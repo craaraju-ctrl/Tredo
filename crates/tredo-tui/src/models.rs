@@ -77,10 +77,7 @@ pub fn render_models(f: &mut Frame, area: Rect, app: &AppState) {
                 Span::styled(prefix, style),
                 Span::styled(name, style),
                 Span::raw("  "),
-                Span::styled(
-                    format!("({})", size),
-                    Style::default().fg(Color::DarkGray),
-                ),
+                Span::styled(format!("({})", size), Style::default().fg(Color::DarkGray)),
             ]))
         })
         .collect();

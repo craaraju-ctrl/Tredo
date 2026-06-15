@@ -5,7 +5,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use tredo_autonomous::walk_forward_runner::{
-    WalkForwardRunner, WalkForwardConfig, HistoricalCandle, SkillResult
+    HistoricalCandle, SkillResult, WalkForwardConfig, WalkForwardRunner,
 };
 
 #[tokio::main]
@@ -43,11 +43,16 @@ fn print_usage() {
     println!("=== Project Tredo: Autonomous AI Execution CLI ===");
     println!("Usage:");
     println!("  tredo-cli validate <csv_path> <symbol>   Run walk-forward out-of-sample backtests");
-    println!("  tredo-cli daemon                         Spin up the autonomous live/paper trading loop");
+    println!(
+        "  tredo-cli daemon                         Spin up the autonomous live/paper trading loop"
+    );
 }
 
 /// Parses historical CSV files and executes the WalkForwardRunner
-async fn run_walk_forward(csv_path: &str, symbol: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn run_walk_forward(
+    csv_path: &str,
+    symbol: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("[Tredo CLI] Reading OHLCV dataset from: {}", csv_path);
     let candles = load_candles_from_csv(csv_path)?;
     println!("[Tredo CLI] Successfully loaded {} candles.", candles.len());
@@ -69,24 +74,33 @@ async fn run_walk_forward(csv_path: &str, symbol: &str) -> Result<(), Box<dyn st
     println!("[Tredo CLI] Starting walk-forward evaluation loops...");
     let start_time = Instant::now();
 
-    let report = runner.run_validation(
-        symbol,
-        &candles,
-        initial_weights,
-        |_slice, _weights| {
-            let results = vec![SkillResult { score: 0.65, confidence: 0.85 }];
+    let report = runner
+        .run_validation(symbol, &candles, initial_weights, |_slice, _weights| {
+            let results = vec![SkillResult {
+                score: 0.65,
+                confidence: 0.85,
+            }];
             Ok(Some(results))
-        }
-    ).await?;
+        })
+        .await?;
 
     let elapsed = start_time.elapsed();
     println!("\n==================================================");
     println!("=== WALK-FORWARD VALIDATION COMPLETE ({:?}) ===", elapsed);
     println!("==================================================");
     println!("Total Folds Evaluated: {}", report.total_folds_evaluated);
-    println!("Mean In-Sample Sharpe:  {:.4}", report.mean_in_sample_sharpe);
-    println!("Mean Out-of-Sample Sharpe: {:.4}", report.mean_out_of_sample_sharpe);
-    println!("Structural Stability Score: {:.2}%", report.structural_stability_score * 100.0);
+    println!(
+        "Mean In-Sample Sharpe:  {:.4}",
+        report.mean_in_sample_sharpe
+    );
+    println!(
+        "Mean Out-of-Sample Sharpe: {:.4}",
+        report.mean_out_of_sample_sharpe
+    );
+    println!(
+        "Structural Stability Score: {:.2}%",
+        report.structural_stability_score * 100.0
+    );
     println!("Deployment Verdict:     {}", report.overall_recommendation);
     println!("==================================================");
 

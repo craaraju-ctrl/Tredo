@@ -92,10 +92,7 @@ pub fn render_positions(f: &mut Frame, area: Rect, app: &AppState) {
                 Span::raw("  "),
                 Span::styled(format!("{:.2}", current), Style::default().fg(Color::White)),
                 Span::raw("  "),
-                Span::styled(
-                    format!("{:+.2}%", pnl_pct),
-                    Style::default().fg(pnl_color),
-                ),
+                Span::styled(format!("{:+.2}%", pnl_pct), Style::default().fg(pnl_color)),
             ]));
         }
         lines

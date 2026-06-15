@@ -16,16 +16,16 @@
 //! Run via: `tredo tui`
 
 // ── Module declarations ───────────────────────────────────────────────────
-mod prelude;
-mod ui;
-mod dashboard;
 mod cot;
-mod positions;
-mod watchlist;
-mod models;
-mod tree;
-mod rules;
+mod dashboard;
 mod help;
+mod models;
+mod positions;
+mod prelude;
+mod rules;
+mod tree;
+mod ui;
+mod watchlist;
 
 // ── Imports ───────────────────────────────────────────────────────────────
 use std::collections::HashMap;
@@ -43,15 +43,15 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, layout::Rect, Terminal};
 
-pub(crate) use crate::ui::ui;
-pub(crate) use crate::dashboard::render_dashboard;
 pub(crate) use crate::cot::render_cot;
-pub(crate) use crate::positions::render_positions;
-pub(crate) use crate::watchlist::render_watchlist;
-pub(crate) use crate::models::render_models;
-pub(crate) use crate::tree::render_tree;
-pub(crate) use crate::rules::render_rules;
+pub(crate) use crate::dashboard::render_dashboard;
 pub(crate) use crate::help::render_help;
+pub(crate) use crate::models::render_models;
+pub(crate) use crate::positions::render_positions;
+pub(crate) use crate::rules::render_rules;
+pub(crate) use crate::tree::render_tree;
+pub(crate) use crate::ui::ui;
+pub(crate) use crate::watchlist::render_watchlist;
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
@@ -260,16 +260,13 @@ fn run_app<B: ratatui::backend::Backend>(
                                                 .json(&body)
                                                 .send()
                                             {
-                                                if let Ok(json) =
-                                                    resp.json::<serde_json::Value>()
-                                                {
+                                                if let Ok(json) = resp.json::<serde_json::Value>() {
                                                     if json
                                                         .get("success")
                                                         .and_then(|s| s.as_bool())
                                                         .unwrap_or(false)
                                                     {
-                                                        app.current_model =
-                                                            Some(name.to_string());
+                                                        app.current_model = Some(name.to_string());
                                                         app.action_message = Some((
                                                             format!("✅ Switched to {}", name),
                                                             Instant::now(),
@@ -280,9 +277,7 @@ fn run_app<B: ratatui::backend::Backend>(
                                         }
                                     }
                                 } else if app.action_running.is_none() {
-                                    if let Some(action) =
-                                        ALL_BUTTONS.get(app.button_focus_offset)
-                                    {
+                                    if let Some(action) = ALL_BUTTONS.get(app.button_focus_offset) {
                                         execute_button_action(app, *action);
                                     }
                                 }
@@ -295,10 +290,8 @@ fn run_app<B: ratatui::backend::Backend>(
                         }
                         KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
                             if app.confirm_action.take().is_some() {
-                                app.action_message = Some((
-                                    "❌ Cancelled.".to_string(),
-                                    Instant::now(),
-                                ));
+                                app.action_message =
+                                    Some(("❌ Cancelled.".to_string(), Instant::now()));
                             }
                             app.scroll_offset = 0;
                             app.selected_model_index = 0;
@@ -322,8 +315,7 @@ fn run_app<B: ratatui::backend::Backend>(
                         },
                         KeyCode::Down => match app.selected_tab {
                             t if t == Tab::Models as usize => {
-                                if app.selected_model_index < app.models.len().saturating_sub(1)
-                                {
+                                if app.selected_model_index < app.models.len().saturating_sub(1) {
                                     app.selected_model_index += 1;
                                 }
                             }
@@ -333,51 +325,46 @@ fn run_app<B: ratatui::backend::Backend>(
                             _ => {
                                 app.scroll_offset += 1;
                             }
-                        }
+                        },
                         _ => {}
                     }
                 }
-                Event::Mouse(mouse) => {
-                    if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
-                        // Cancel any pending confirmation on mouse click
-                        if app.confirm_action.take().is_some() {
-                            app.action_message = Some((
-                                "❌ Cancelled.".to_string(),
-                                Instant::now(),
-                            ));
+                Event::Mouse(mouse) if mouse.kind == MouseEventKind::Down(MouseButton::Left) => {
+                    // Cancel any pending confirmation on mouse click
+                    if app.confirm_action.take().is_some() {
+                        app.action_message = Some(("❌ Cancelled.".to_string(), Instant::now()));
+                    }
+
+                    let col = mouse.column;
+                    let row = mouse.row;
+
+                    // Check tab clicks first (higher priority)
+                    for (i, area) in app.tab_areas.iter().enumerate() {
+                        if row >= area.y
+                            && row < area.y + area.height
+                            && col >= area.x
+                            && col < area.x + area.width
+                        {
+                            app.selected_tab = i;
+                            app.scroll_offset = 0;
+                            break;
                         }
+                    }
 
-                        let col = mouse.column;
-                        let row = mouse.row;
-
-                        // Check tab clicks first (higher priority)
-                        for (i, area) in app.tab_areas.iter().enumerate() {
-                            if row >= area.y
-                                && row < area.y + area.height
-                                && col >= area.x
-                                && col < area.x + area.width
-                            {
-                                app.selected_tab = i;
-                                app.scroll_offset = 0;
-                                break;
-                            }
-                        }
-
-                        // Then check button clicks
-                        for (i, area) in app.button_areas.iter().enumerate() {
-                            if row >= area.y
-                                && row < area.y + area.height
-                                && col >= area.x
-                                && col < area.x + area.width
-                            {
-                                app.button_focus_offset = i;
-                                if app.action_running.is_none() {
-                                    if let Some(action) = ALL_BUTTONS.get(i) {
-                                        execute_button_action(app, *action);
-                                    }
+                    // Then check button clicks
+                    for (i, area) in app.button_areas.iter().enumerate() {
+                        if row >= area.y
+                            && row < area.y + area.height
+                            && col >= area.x
+                            && col < area.x + area.width
+                        {
+                            app.button_focus_offset = i;
+                            if app.action_running.is_none() {
+                                if let Some(action) = ALL_BUTTONS.get(i) {
+                                    execute_button_action(app, *action);
                                 }
-                                break;
                             }
+                            break;
                         }
                     }
                 }
@@ -419,11 +406,7 @@ fn execute_button_action(app: &mut AppState, action: ButtonAction) {
             // Show confirmation prompt instead of running immediately
             app.confirm_action = Some(action);
             app.action_message = Some((
-                format!(
-                    "{} {}? (y/N)",
-                    action.icon(),
-                    action.label().trim()
-                ),
+                format!("{} {}? (y/N)", action.icon(), action.label().trim()),
                 Instant::now(),
             ));
         }
@@ -457,10 +440,8 @@ fn run_pipeline_action(app: &mut AppState, action: ButtonAction) {
                     Ok(resp) => {
                         if resp.status().is_success() {
                             if let Ok(json) = resp.json::<serde_json::Value>() {
-                                let decision = json
-                                    .get("decision")
-                                    .and_then(|d| d.as_str())
-                                    .unwrap_or("?");
+                                let decision =
+                                    json.get("decision").and_then(|d| d.as_str()).unwrap_or("?");
                                 format!("✅ Pipeline done → {}", decision)
                             } else {
                                 "✅ Pipeline cycle completed".to_string()
@@ -501,8 +482,7 @@ fn poll_backend(app: &mut AppState) {
             }
         }
         Ok(_) | Err(_) => {
-            app.error =
-                Some("Backend not responding. Run `tredo` or `tredo start` first.".into());
+            app.error = Some("Backend not responding. Run `tredo` or `tredo start` first.".into());
         }
     }
 
@@ -523,7 +503,9 @@ fn poll_backend(app: &mut AppState) {
             let mut index: HashMap<String, serde_json::Value> = HashMap::new();
             for entry in app.cot.iter().rev() {
                 if let Some(agent) = entry.get("agent").and_then(|a| a.as_str()) {
-                    index.entry(agent.to_string()).or_insert_with(|| entry.clone());
+                    index
+                        .entry(agent.to_string())
+                        .or_insert_with(|| entry.clone());
                 }
             }
             app.cot_by_agent = index;

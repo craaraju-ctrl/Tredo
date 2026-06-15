@@ -127,8 +127,8 @@ case "${1:-help}" in
   setup|install|wizard) run_setup ;;
   tui) source "$CONFIG_FILE" 2>/dev/null || true; exec cargo run -p tredo-tui ;;
   orchestrator) source "$CONFIG_FILE" 2>/dev/null || true; exec cargo run -p tredo-orchestrator ;;
-  build) cargo build --workspace --release ;;
-  test) cargo fmt --all -- --check; cargo clippy --workspace --all-targets; cargo test -p tredo-core -p tredo-autonomous ;;
+  build) cargo build --workspace --exclude tredo-tauri --release ;;
+  test) cargo fmt --all -- --check && cargo clippy --workspace --exclude tredo-tauri --all-targets -- -D warnings && cargo test -p tredo-core -p tredo-autonomous ;;
   services) print_services ;;
   meta)
     echo "=== tredo meta (demo self-evolution / adaptation loop) ==="

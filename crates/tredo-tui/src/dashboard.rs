@@ -37,12 +37,11 @@ pub fn render_dashboard(f: &mut Frame, area: Rect, app: &AppState) {
     } else {
         0.0
     };
-    let equity_used_pct =
-        if equity > 0.0 {
-            ((equity - cash) / equity * 100.0).min(100.0) as u16
-        } else {
-            0
-        };
+    let equity_used_pct = if equity > 0.0 {
+        ((equity - cash) / equity * 100.0).min(100.0) as u16
+    } else {
+        0
+    };
     let cash_pct = if equity > 0.0 {
         (cash / equity * 100.0) as u16
     } else {
@@ -163,9 +162,7 @@ fn render_metric_card(
     let block = Block::default()
         .title(Span::styled(
             title,
-            Style::default()
-                .fg(accent)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(accent).add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(accent));
@@ -199,7 +196,7 @@ fn render_metric_card(
         31..=70 => Color::Yellow,
         _ => Color::Red,
     };
-    let clamped = percent.min(100).max(0);
+    let clamped = percent.clamp(0, 100);
 
     let gauge = Gauge::default()
         .gauge_style(Style::default().fg(gauge_color).bg(Color::DarkGray))

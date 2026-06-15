@@ -45,54 +45,141 @@ fn render_tree_content(f: &mut Frame, area: Rect, app: &AppState) {
 
     // Aggregated signal header
     if let Some(agg) = &app.aggregated_signal {
-        let net = agg.get("net_signal").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let conviction = agg.get("conviction").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let bullish_str = agg.get("bullish_strength").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let bearish_str = agg.get("bearish_strength").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let bullish_cnt = agg.get("bullish_count").and_then(|v| v.as_u64()).unwrap_or(0);
-        let bearish_cnt = agg.get("bearish_count").and_then(|v| v.as_u64()).unwrap_or(0);
-        let neutral_cnt = agg.get("neutral_count").and_then(|v| v.as_u64()).unwrap_or(0);
+        let net = agg
+            .get("net_signal")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let conviction = agg
+            .get("conviction")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let bullish_str = agg
+            .get("bullish_strength")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let bearish_str = agg
+            .get("bearish_strength")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let bullish_cnt = agg
+            .get("bullish_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let bearish_cnt = agg
+            .get("bearish_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let neutral_cnt = agg
+            .get("neutral_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
 
-        let signal_color = if net > 0.15 { Color::Green } else if net < -0.15 { Color::Red } else { Color::Yellow };
-        let direction = if net > 0.15 { "BULLISH" } else if net < -0.15 { "BEARISH" } else { "NEUTRAL" };
+        let signal_color = if net > 0.15 {
+            Color::Green
+        } else if net < -0.15 {
+            Color::Red
+        } else {
+            Color::Yellow
+        };
+        let direction = if net > 0.15 {
+            "BULLISH"
+        } else if net < -0.15 {
+            "BEARISH"
+        } else {
+            "NEUTRAL"
+        };
 
         lines.push(Line::from(vec![
-            Span::styled("  📊 SKILL CONSENSUS: ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-            Span::styled(direction, Style::default().fg(signal_color).add_modifier(Modifier::BOLD)),
             Span::styled(
-                format!(" | net={:+.3} | conv={:.0}% | bull={:.3} bear={:.3} | {}B/{}Be/{}N",
-                    net, conviction * 100.0, bullish_str, bearish_str, bullish_cnt, bearish_cnt, neutral_cnt),
+                "  📊 SKILL CONSENSUS: ",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                direction,
+                Style::default()
+                    .fg(signal_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(
+                    " | net={:+.3} | conv={:.0}% | bull={:.3} bear={:.3} | {}B/{}Be/{}N",
+                    net,
+                    conviction * 100.0,
+                    bullish_str,
+                    bearish_str,
+                    bullish_cnt,
+                    bearish_cnt,
+                    neutral_cnt
+                ),
                 Style::default().fg(Color::DarkGray),
             ),
         ]));
         lines.push(Line::from(""));
     }
 
-    build_tree_lines(&tree_json, "", true, true, &app.cot_by_agent, &app.skill_votes, &mut lines, 0);
+    build_tree_lines(
+        &tree_json,
+        "",
+        true,
+        true,
+        &app.cot_by_agent,
+        &app.skill_votes,
+        &mut lines,
+        0,
+    );
 
     let max_visible = (area.height.saturating_sub(2)) as usize;
     let scroll = app.tree_scroll.min(lines.len().saturating_sub(max_visible));
-    let visible: Vec<Line> = lines.iter().skip(scroll).take(max_visible).cloned().collect();
+    let visible: Vec<Line> = lines
+        .iter()
+        .skip(scroll)
+        .take(max_visible)
+        .cloned()
+        .collect();
 
-    let list = List::new(visible)
-        .block(Block::default().title("🌳 Agent & Sub-Agent Tree").borders(Borders::ALL));
+    let list = List::new(visible).block(
+        Block::default()
+            .title("🌳 Agent & Sub-Agent Tree")
+            .borders(Borders::ALL),
+    );
     f.render_widget(list, area);
 }
 
-fn find_skill_vote<'a>(name: &str, skill_index: &'a HashMap<String, serde_json::Value>) -> Option<&'a serde_json::Value> {
-    if let Some(vote) = skill_index.get(name) { return Some(vote); }
+fn find_skill_vote<'a>(
+    name: &str,
+    skill_index: &'a HashMap<String, serde_json::Value>,
+) -> Option<&'a serde_json::Value> {
+    if let Some(vote) = skill_index.get(name) {
+        return Some(vote);
+    }
     if let Some(stripped) = name.strip_suffix("Agent") {
-        if let Some(vote) = skill_index.get(stripped) { return Some(vote); }
+        if let Some(vote) = skill_index.get(stripped) {
+            return Some(vote);
+        }
     }
     let with_agent = format!("{}Agent", name);
-    if let Some(vote) = skill_index.get(&with_agent) { return Some(vote); }
+    if let Some(vote) = skill_index.get(&with_agent) {
+        return Some(vote);
+    }
     None
 }
 
 fn render_score_bar(score: f64, confidence: f64, width: usize) -> (String, Color) {
     let filled = ((score.abs() * width as f64) as usize).min(width);
-    let bar: String = (0..width).map(|i| if i < filled { '█' } else { '░' }).collect();
-    let color = if score > 0.3 { Color::Green } else if score < -0.3 { Color::Red } else if confidence > 0.5 { Color::Yellow } else { Color::DarkGray };
+    let bar: String = (0..width)
+        .map(|i| if i < filled { '█' } else { '░' })
+        .collect();
+    let color = if score > 0.3 {
+        Color::Green
+    } else if score < -0.3 {
+        Color::Red
+    } else if confidence > 0.5 {
+        Color::Yellow
+    } else {
+        Color::DarkGray
+    };
     (bar, color)
 }
 
@@ -111,7 +198,13 @@ fn build_tree_lines(
     let role = node.get("role").and_then(|r| r.as_str()).unwrap_or("");
     let children = node.get("children").and_then(|c| c.as_array());
 
-    let connector = if is_root { "" } else if is_last { "└── " } else { "├── " };
+    let connector = if is_root {
+        ""
+    } else if is_last {
+        "└── "
+    } else {
+        "├── "
+    };
     let display_prefix = if is_root { "" } else { prefix };
     let label = format!("{}{}", display_prefix, connector);
 
@@ -122,30 +215,63 @@ fn build_tree_lines(
         n if n.contains("Executer") => Color::Magenta,
         n if n.contains("Guardian") => Color::Red,
         n if n.contains("MetaControl") => Color::Cyan,
-        _ => match depth { 2 => Color::White, _ => Color::Gray },
+        _ => match depth {
+            2 => Color::White,
+            _ => Color::Gray,
+        },
     };
 
     let (action_badge, reason_text, confidence_str) = if let Some(cot) = cot_index.get(name) {
         let action = cot.get("action").and_then(|a| a.as_str()).unwrap_or("");
         let reason = cot.get("reason").and_then(|r| r.as_str()).unwrap_or("");
-        let conf = cot.get("confidence").and_then(|c| c.as_f64()).unwrap_or(0.0);
-        (format!(" [{}]", action), reason.chars().take(50).collect(), format!(" ({:.0}%)", conf * 100.0))
+        let conf = cot
+            .get("confidence")
+            .and_then(|c| c.as_f64())
+            .unwrap_or(0.0);
+        (
+            format!(" [{}]", action),
+            reason.chars().take(50).collect(),
+            format!(" ({:.0}%)", conf * 100.0),
+        )
     } else {
         (String::new(), String::new(), String::new())
     };
 
-    let action_color = if action_badge.contains("PASS") || action_badge.contains("BUY") || action_badge.contains("ANALYZED") { Color::Green }
-        else if action_badge.contains("FAIL") || action_badge.contains("HALT") || action_badge.contains("ABORT") { Color::Red }
-        else if action_badge.contains("HOLD") || action_badge.contains("SKIP") { Color::Yellow }
-        else if action_badge.contains("PIPELINE_START") || action_badge.contains("MODEL_SWITCH") || action_badge.contains("UPDATED") { Color::Cyan }
-        else if action_badge.is_empty() { Color::DarkGray }
-        else { Color::White };
+    let action_color = if action_badge.contains("PASS")
+        || action_badge.contains("BUY")
+        || action_badge.contains("ANALYZED")
+    {
+        Color::Green
+    } else if action_badge.contains("FAIL")
+        || action_badge.contains("HALT")
+        || action_badge.contains("ABORT")
+    {
+        Color::Red
+    } else if action_badge.contains("HOLD") || action_badge.contains("SKIP") {
+        Color::Yellow
+    } else if action_badge.contains("PIPELINE_START")
+        || action_badge.contains("MODEL_SWITCH")
+        || action_badge.contains("UPDATED")
+    {
+        Color::Cyan
+    } else if action_badge.is_empty() {
+        Color::DarkGray
+    } else {
+        Color::White
+    };
 
     let skill_info = find_skill_vote(name, skill_index);
     let (skill_score, skill_conf, skill_dir, skill_weight) = if let Some(vote) = skill_info {
         let sc = vote.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let co = vote.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let dir = vote.get("direction").and_then(|v| v.as_str()).unwrap_or("Neutral").to_string();
+        let co = vote
+            .get("confidence")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let dir = vote
+            .get("direction")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Neutral")
+            .to_string();
         let wt = vote.get("weight").and_then(|v| v.as_f64()).unwrap_or(0.0);
         (sc, co, dir, wt)
     } else {
@@ -158,7 +284,9 @@ fn build_tree_lines(
     }
 
     let name_style = if depth == 0 {
-        Style::default().fg(name_color).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+        Style::default()
+            .fg(name_color)
+            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
     } else if depth == 1 {
         Style::default().fg(name_color).add_modifier(Modifier::BOLD)
     } else {
@@ -167,45 +295,106 @@ fn build_tree_lines(
     spans.push(Span::styled(name.to_string(), name_style));
 
     if !role.is_empty() && depth <= 1 {
-        spans.push(Span::styled(format!(" — {}", role), Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)));
+        spans.push(Span::styled(
+            format!(" — {}", role),
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        ));
     }
     if !action_badge.is_empty() {
-        spans.push(Span::styled(action_badge, Style::default().fg(action_color).add_modifier(Modifier::BOLD)));
+        spans.push(Span::styled(
+            action_badge,
+            Style::default()
+                .fg(action_color)
+                .add_modifier(Modifier::BOLD),
+        ));
     }
     if !confidence_str.is_empty() {
-        spans.push(Span::styled(confidence_str, Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(
+            confidence_str,
+            Style::default().fg(Color::DarkGray),
+        ));
     }
 
     if skill_score != 0.0 || skill_conf > 0.0 {
-        let dir_icon = match skill_dir.as_str() { "Bullish" => "▲", "Bearish" => "▼", _ => "◆" };
-        let dir_color = match skill_dir.as_str() { "Bullish" => Color::Green, "Bearish" => Color::Red, _ => Color::DarkGray };
+        let dir_icon = match skill_dir.as_str() {
+            "Bullish" => "▲",
+            "Bearish" => "▼",
+            _ => "◆",
+        };
+        let dir_color = match skill_dir.as_str() {
+            "Bullish" => Color::Green,
+            "Bearish" => Color::Red,
+            _ => Color::DarkGray,
+        };
         let (bar, bar_color) = render_score_bar(skill_score, skill_conf, 6);
         spans.push(Span::raw("  "));
         spans.push(Span::styled(dir_icon, Style::default().fg(dir_color)));
-        spans.push(Span::styled(format!("|{}|", bar), Style::default().fg(bar_color)));
-        spans.push(Span::styled(format!(" {:+.2} ({:.0}%)", skill_score, skill_conf * 100.0), Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(
+            format!("|{}|", bar),
+            Style::default().fg(bar_color),
+        ));
+        spans.push(Span::styled(
+            format!(" {:+.2} ({:.0}%)", skill_score, skill_conf * 100.0),
+            Style::default().fg(Color::DarkGray),
+        ));
         if skill_weight > 0.0 {
-            spans.push(Span::styled(format!(" w={:.2}", skill_weight), Style::default().fg(Color::Gray)));
+            spans.push(Span::styled(
+                format!(" w={:.2}", skill_weight),
+                Style::default().fg(Color::Gray),
+            ));
         }
     }
 
     lines.push(Line::from(spans));
 
     if !reason_text.is_empty() && depth >= 2 {
-        let indent = if is_root { "" } else if is_last { "    " } else { "│   " };
+        let indent = if is_root {
+            ""
+        } else if is_last {
+            "    "
+        } else {
+            "│   "
+        };
         let sub_indent = format!("{}{}      ", display_prefix, indent);
         lines.push(Line::from(vec![
-            Span::styled(sub_indent, Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)),
+            Span::styled(
+                sub_indent,
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            ),
             Span::styled("▸ ", Style::default().fg(action_color)),
-            Span::styled(reason_text, Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)),
+            Span::styled(
+                reason_text,
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            ),
         ]));
     }
 
     if let Some(children) = children {
         for (i, child) in children.iter().enumerate() {
             let child_is_last = i == children.len() - 1;
-            let child_prefix = if is_root { String::new() } else if is_last { format!("{}    ", prefix) } else { format!("{}│   ", prefix) };
-            build_tree_lines(child, &child_prefix, child_is_last, false, cot_index, skill_index, lines, depth + 1);
+            let child_prefix = if is_root {
+                String::new()
+            } else if is_last {
+                format!("{}    ", prefix)
+            } else {
+                format!("{}│   ", prefix)
+            };
+            build_tree_lines(
+                child,
+                &child_prefix,
+                child_is_last,
+                false,
+                cot_index,
+                skill_index,
+                lines,
+                depth + 1,
+            );
         }
     }
 
@@ -219,26 +408,44 @@ fn build_tree_lines(
 
 fn render_tree_legend(f: &mut Frame, area: Rect) {
     let legend = vec![
-        Line::from(vec![Span::styled("  📖 Color Legend", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD))]),
+        Line::from(vec![Span::styled(
+            "  📖 Color Legend",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )]),
         Line::from(vec![
             Span::styled("    ", Style::default()),
-            Span::styled("🟢", Style::default().fg(Color::Green)), Span::styled(" PASS  | ", Style::default().fg(Color::Green)),
-            Span::styled("🔴", Style::default().fg(Color::Red)), Span::styled(" FAIL/HALT/ABORT  | ", Style::default().fg(Color::Red)),
-            Span::styled("🟡", Style::default().fg(Color::Yellow)), Span::styled(" HOLD/SKIP  | ", Style::default().fg(Color::Yellow)),
-            Span::styled("🔵", Style::default().fg(Color::Cyan)), Span::styled(" START/UPDATED", Style::default().fg(Color::Cyan)),
+            Span::styled("🟢", Style::default().fg(Color::Green)),
+            Span::styled(" PASS  | ", Style::default().fg(Color::Green)),
+            Span::styled("🔴", Style::default().fg(Color::Red)),
+            Span::styled(" FAIL/HALT/ABORT  | ", Style::default().fg(Color::Red)),
+            Span::styled("🟡", Style::default().fg(Color::Yellow)),
+            Span::styled(" HOLD/SKIP  | ", Style::default().fg(Color::Yellow)),
+            Span::styled("🔵", Style::default().fg(Color::Cyan)),
+            Span::styled(" START/UPDATED", Style::default().fg(Color::Cyan)),
         ]),
         Line::from(vec![
             Span::styled("    ", Style::default()),
-            Span::styled("⬜", Style::default().fg(Color::DarkGray)), Span::styled(" Idle  | ", Style::default().fg(Color::DarkGray)),
-            Span::styled("▲ ", Style::default().fg(Color::Green)), Span::styled("Bullish  | ", Style::default().fg(Color::Green)),
-            Span::styled("▼ ", Style::default().fg(Color::Red)), Span::styled("Bearish  | ", Style::default().fg(Color::Red)),
-            Span::styled("◆ ", Style::default().fg(Color::DarkGray)), Span::styled("Neutral  | ", Style::default().fg(Color::DarkGray)),
-            Span::styled("▸", Style::default().fg(Color::DarkGray)), Span::styled(" Reasoning", Style::default().fg(Color::DarkGray)),
+            Span::styled("⬜", Style::default().fg(Color::DarkGray)),
+            Span::styled(" Idle  | ", Style::default().fg(Color::DarkGray)),
+            Span::styled("▲ ", Style::default().fg(Color::Green)),
+            Span::styled("Bullish  | ", Style::default().fg(Color::Green)),
+            Span::styled("▼ ", Style::default().fg(Color::Red)),
+            Span::styled("Bearish  | ", Style::default().fg(Color::Red)),
+            Span::styled("◆ ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Neutral  | ", Style::default().fg(Color::DarkGray)),
+            Span::styled("▸", Style::default().fg(Color::DarkGray)),
+            Span::styled(" Reasoning", Style::default().fg(Color::DarkGray)),
         ]),
     ];
 
     let p = Paragraph::new(legend)
         .style(Style::default().fg(Color::DarkGray))
-        .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(Color::DarkGray)));
+        .block(
+            Block::default()
+                .borders(Borders::TOP)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
     f.render_widget(p, area);
 }

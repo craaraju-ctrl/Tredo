@@ -349,7 +349,10 @@ impl EpisodeStore {
         Ok(())
     }
 
-    pub fn insert_skill_weight_snapshot(&self, snap: &SkillWeightSnapshot) -> Result<(), rusqlite::Error> {
+    pub fn insert_skill_weight_snapshot(
+        &self,
+        snap: &SkillWeightSnapshot,
+    ) -> Result<(), rusqlite::Error> {
         let conn = self.conn.lock().expect("lock");
         conn.execute(
             "INSERT OR REPLACE INTO skill_weight_snapshots (episode_id, initial_weights, updated_weights, timestamp)
@@ -367,18 +370,19 @@ impl EpisodeStore {
     /// Load the most recent N market_regime values (for regime stability check in MetaControl).
     pub fn load_recent_regimes(&self, n: usize) -> Result<Vec<String>, rusqlite::Error> {
         let conn = self.conn.lock().expect("lock");
-        let mut stmt = conn.prepare(
-            "SELECT market_regime FROM closed_trades ORDER BY entry_time DESC LIMIT ?1"
-        )?;
+        let mut stmt = conn
+            .prepare("SELECT market_regime FROM closed_trades ORDER BY entry_time DESC LIMIT ?1")?;
         let rows = stmt.query_map(params![n as i64], |row| row.get(0))?;
         rows.collect()
     }
 
-
-
     /// Load recent closed trades (for performance evaluation and rollback checks).
     /// Filters by rule_version if provided. Includes was_correct for win rate calculation.
-    pub fn load_recent_closed_trades(&self, limit: usize, rule_version: Option<u32>) -> Result<Vec<ClosedEpisode>, rusqlite::Error> {
+    pub fn load_recent_closed_trades(
+        &self,
+        limit: usize,
+        rule_version: Option<u32>,
+    ) -> Result<Vec<ClosedEpisode>, rusqlite::Error> {
         let conn = self.conn.lock().expect("lock");
         let sql = if let Some(v) = rule_version {
             format!(
@@ -429,7 +433,7 @@ impl EpisodeStore {
         let conn = self.conn.lock().expect("lock");
         let mut stmt = conn.prepare(
             "SELECT version, config_json, baseline_win_rate, baseline_avg_regret, timestamp
-             FROM rule_snapshots WHERE version = ?1"
+             FROM rule_snapshots WHERE version = ?1",
         )?;
         let mut rows = stmt.query_map(params![version], |row| {
             Ok(RuleSnapshot {
@@ -446,9 +450,8 @@ impl EpisodeStore {
     /// Fetch recent regret scores (for high regret detection in evaluate_and_adapt).
     pub fn fetch_recent_regret_scores(&self, limit: usize) -> Result<Vec<f64>, rusqlite::Error> {
         let conn = self.conn.lock().expect("lock");
-        let mut stmt = conn.prepare(
-            "SELECT regret_score FROM closed_trades ORDER BY entry_time DESC LIMIT ?1"
-        )?;
+        let mut stmt = conn
+            .prepare("SELECT regret_score FROM closed_trades ORDER BY entry_time DESC LIMIT ?1")?;
         let rows = stmt.query_map(params![limit as i64], |row| row.get(0))?;
         rows.collect()
     }
@@ -471,7 +474,13 @@ impl EpisodeStore {
     }
 
     /// Record a rule change (supports RULE_REVERT etc.).
-    pub fn record_rule_change(&self, rule_name: &str, new_value: &str, reason: &str, timestamp: u64) -> Result<(), rusqlite::Error> {
+    pub fn record_rule_change(
+        &self,
+        rule_name: &str,
+        new_value: &str,
+        reason: &str,
+        timestamp: u64,
+    ) -> Result<(), rusqlite::Error> {
         let rc = RuleChangeRow {
             rule_name: rule_name.to_string(),
             old_value: 0.0, // caller can provide if needed
@@ -483,7 +492,13 @@ impl EpisodeStore {
     }
 
     /// Insert a COT log entry (for meta control reasoning).
-    pub fn insert_cot_log(&self, agent: &str, action: &str, reason: &str, timestamp: u64) -> Result<(), rusqlite::Error> {
+    pub fn insert_cot_log(
+        &self,
+        agent: &str,
+        action: &str,
+        reason: &str,
+        timestamp: u64,
+    ) -> Result<(), rusqlite::Error> {
         let cot = CotLogRow {
             chain_id: 0,
             agent: agent.to_string(),
@@ -525,7 +540,11 @@ impl EpisodeStore {
             position_size: 0.0,
             pnl: record.raw_pnl,
             pnl_pct: record.pct_pnl,
-            outcome: if record.was_correct { "WIN".into() } else { "LOSS".into() },
+            outcome: if record.was_correct {
+                "WIN".into()
+            } else {
+                "LOSS".into()
+            },
             exit_reason: "close".into(),
             regret_score: record.regret_score,
             lesson: "".into(),

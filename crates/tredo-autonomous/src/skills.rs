@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 // Re-export SkillResult from walk_forward_runner to avoid duplicate definitions.
@@ -37,8 +37,8 @@ impl ConfluenceScorer {
             })
             .sum();
 
-        let avg_confidence: f64 = skills.iter().map(|s| s.confidence).sum::<f64>()
-            / skills.len() as f64;
+        let avg_confidence: f64 =
+            skills.iter().map(|s| s.confidence).sum::<f64>() / skills.len() as f64;
 
         Self {
             net_score: (weighted_sum / total_weight).clamp(-1.0, 1.0),

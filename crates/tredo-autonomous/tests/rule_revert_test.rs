@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use tredo_autonomous::episode_store::{EpisodeStore, ClosedEpisode, RuleSnapshot};
-use tredo_autonomous::outcome_processor::{OutcomeProcessor, PreTradeSnapshot};
+use tredo_autonomous::episode_store::{ClosedEpisode, EpisodeStore, RuleSnapshot};
 use tredo_autonomous::meta_control::EvolvedMetaControl;
+use tredo_autonomous::outcome_processor::{OutcomeProcessor, PreTradeSnapshot};
 use tredo_autonomous::risk_guardian::RiskGuardianConfig;
 use tredo_autonomous::types::MarketRegime;
 
@@ -20,7 +20,9 @@ async fn test_automated_rule_revert_on_degraded_performance() {
         baseline_avg_regret: 0.15,
         timestamp: 100000,
     };
-    store.insert_rule_snapshot(genesis_snapshot).expect("Genesis seed must succeed");
+    store
+        .insert_rule_snapshot(genesis_snapshot)
+        .expect("Genesis seed must succeed");
 
     // 2. Initialize EvolvedMetaControl on active version v2 (simulating a prior rule adaptation)
     let meta_control = EvolvedMetaControl::new(store.clone(), 0.05, 2);
@@ -43,7 +45,9 @@ async fn test_automated_rule_revert_on_degraded_performance() {
         baseline_avg_regret: 0.20,
         timestamp: 101000,
     };
-    store.insert_rule_snapshot(v2_snapshot).expect("v2 snapshot must succeed");
+    store
+        .insert_rule_snapshot(v2_snapshot)
+        .expect("v2 snapshot must succeed");
 
     // 3. Register 15 consecutively losing trades under version v2 to trigger high regret limits
     for i in 0..15 {
@@ -73,7 +77,9 @@ async fn test_automated_rule_revert_on_degraded_performance() {
             rule_version: 2,
             was_correct: false,
         };
-        store.insert_closed_trade(&ep).expect("Must insert losing trace");
+        store
+            .insert_closed_trade(&ep)
+            .expect("Must insert losing trace");
     }
 
     // Register active pre-trade snapshot
@@ -97,13 +103,16 @@ async fn test_automated_rule_revert_on_degraded_performance() {
     processor.register_pending_trade(pending);
 
     // 4. Resolve the trade, which triggers the evaluation rollback checks
-    let (_weights, evolved_config) = processor.process_trade_close(
-        "trigger_episode",
-        54000.0,
-        MarketRegime::TrendingBull,
-        10,
-        &v2_rules,
-    ).await.expect("Outcome evaluation must run successfully");
+    let (_weights, evolved_config) = processor
+        .process_trade_close(
+            "trigger_episode",
+            54000.0,
+            MarketRegime::TrendingBull,
+            10,
+            &v2_rules,
+        )
+        .await
+        .expect("Outcome evaluation must run successfully");
 
     // 5. Verification: Check that the rollback activated and restored v1 rules
     assert!(
@@ -116,5 +125,7 @@ async fn test_automated_rule_revert_on_degraded_performance() {
     assert_eq!(restored.absolute_max_leverage, 3);
     assert_eq!(restored.max_risk_per_trade_pct, 0.02);
 
-    println!("[TEST PASSED] Automated RULE_REVERT successfully triggered, falling back to version 1.");
+    println!(
+        "[TEST PASSED] Automated RULE_REVERT successfully triggered, falling back to version 1."
+    );
 }

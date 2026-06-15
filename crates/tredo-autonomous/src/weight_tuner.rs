@@ -1,5 +1,5 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillWeightSnapshot {
@@ -32,7 +32,7 @@ impl AttributionEngine {
         &self,
         episode_id: &str,
         actual_pnl_pct: f64,
-        trade_direction: &str, // "BUY" or "SELL"
+        trade_direction: &str,                    // "BUY" or "SELL"
         skill_predictions: &HashMap<String, f64>, // Space: [-1.0, +1.0]
         current_weights: &HashMap<String, f64>,
         timestamp: u64,
@@ -41,8 +41,20 @@ impl AttributionEngine {
 
         // Map trade outcome cleanly to the same [-1.0, +1.0] space as the skills
         let outcome_signal = match trade_direction {
-            "BUY" => if actual_pnl_pct > 0.0 { 1.0 } else { -1.0 },
-            "SELL" => if actual_pnl_pct > 0.0 { -1.0 } else { 1.0 },
+            "BUY" => {
+                if actual_pnl_pct > 0.0 {
+                    1.0
+                } else {
+                    -1.0
+                }
+            }
+            "SELL" => {
+                if actual_pnl_pct > 0.0 {
+                    -1.0
+                } else {
+                    1.0
+                }
+            }
             _ => 0.0,
         };
 
@@ -50,8 +62,8 @@ impl AttributionEngine {
             if let Some(&prediction) = skill_predictions.get(skill_name) {
                 // Ensure prediction space matches outcome space bounds
                 let clamped_pred = prediction.clamp(-1.0, 1.0);
-                
-                let is_correct = (clamped_pred >= 0.0 && outcome_signal >= 0.0) 
+
+                let is_correct = (clamped_pred >= 0.0 && outcome_signal >= 0.0)
                     || (clamped_pred < 0.0 && outcome_signal < 0.0);
 
                 let delta = (clamped_pred - outcome_signal).abs(); // Domain: [0.0, 2.0]
@@ -106,7 +118,10 @@ mod tests {
         let snap = engine.tune_skill_weights("ep1", 0.03, "BUY", &preds, &current, 123456);
         let new_a = *snap.updated_weights.get("A").unwrap();
         let new_b = *snap.updated_weights.get("B").unwrap();
-        assert!(new_a > new_b, "Correct skill should get higher weight than skill that didn't predict");
+        assert!(
+            new_a > new_b,
+            "Correct skill should get higher weight than skill that didn't predict"
+        );
         let sum: f64 = snap.updated_weights.values().sum();
         assert!((sum - 1.0).abs() < 1e-9, "Weights must normalize to 1.0");
     }
@@ -127,6 +142,9 @@ mod tests {
         let new_b = *snap.updated_weights.get("B").unwrap();
         // A was wrong (predicted BUY, trade lost), B had no prediction
         // Both get clamped then normalized; A should be <= B
-        assert!(new_a <= new_b, "Wrong skill should not exceed skill with no prediction");
+        assert!(
+            new_a <= new_b,
+            "Wrong skill should not exceed skill with no prediction"
+        );
     }
 }

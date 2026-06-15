@@ -7285,7 +7285,7 @@ dependencies = [
 
 [[package]]
 name = "tredo-autonomous"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -7299,7 +7299,7 @@ dependencies = [
 
 [[package]]
 name = "tredo-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "arrow-array",
  "arrow-schema",
@@ -7319,7 +7319,7 @@ dependencies = [
 
 [[package]]
 name = "tredo-orchestrator"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -7335,7 +7335,7 @@ dependencies = [
 
 [[package]]
 name = "tredo-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "chrono",
@@ -7352,7 +7352,7 @@ dependencies = [
 
 [[package]]
 name = "tredo-tauri"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "env_logger 0.11.10",
@@ -7370,7 +7370,7 @@ dependencies = [
 
 [[package]]
 name = "tredo-tui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "chrono",

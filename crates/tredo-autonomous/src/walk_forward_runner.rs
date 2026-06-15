@@ -1,5 +1,5 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
 
 use crate::weight_tuner::AttributionEngine;
 
@@ -22,9 +22,9 @@ pub struct HistoricalCandle {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalkForwardConfig {
-    pub train_window_size: usize,   // Number of candles for the training (in-sample) block
-    pub test_window_size: usize,    // Number of candles for the evaluation (out-of-sample) block
-    pub step_size: usize,           // Step increment to walk forward (e.g. equal to test_window_size)
+    pub train_window_size: usize, // Number of candles for the training (in-sample) block
+    pub test_window_size: usize,  // Number of candles for the evaluation (out-of-sample) block
+    pub step_size: usize,         // Step increment to walk forward (e.g. equal to test_window_size)
     pub initial_capital: f64,
     pub base_learning_rate: f64,
     pub overfitting_threshold: f64, // Max allowed drop ratio between in-sample and out-of-sample performance
@@ -80,10 +80,16 @@ impl WalkForwardRunner {
         mut signal_generation_fn: F,
     ) -> Result<WalkForwardReport, String>
     where
-        F: FnMut(&[HistoricalCandle], &HashMap<String, f64>) -> Result<Option<Vec<SkillResult>>, String>,
+        F: FnMut(
+            &[HistoricalCandle],
+            &HashMap<String, f64>,
+        ) -> Result<Option<Vec<SkillResult>>, String>,
     {
         if data_series.len() < (self.config.train_window_size + self.config.test_window_size) {
-            return Err("Insufficient historical series length for the configured walk-forward parameters".to_string());
+            return Err(
+                "Insufficient historical series length for the configured walk-forward parameters"
+                    .to_string(),
+            );
         }
 
         let mut folds = Vec::new();
@@ -91,7 +97,9 @@ impl WalkForwardRunner {
         let mut pointer = 0;
 
         // Walk through the data series using rolling window splits
-        while (pointer + self.config.train_window_size + self.config.test_window_size) <= data_series.len() {
+        while (pointer + self.config.train_window_size + self.config.test_window_size)
+            <= data_series.len()
+        {
             let train_start = pointer;
             let train_end = pointer + self.config.train_window_size;
             let test_start = train_end;
@@ -101,20 +109,24 @@ impl WalkForwardRunner {
             let test_slice = &data_series[test_start..test_end];
 
             // 1. Train Stage: Optimize weights on the in-sample (train) partition
-            let (is_sharpe, trained_weights) = self.simulate_and_train_weights(
-                symbol,
-                train_slice,
-                active_weights.clone(),
-                &mut signal_generation_fn,
-            ).await?;
+            let (is_sharpe, trained_weights) = self
+                .simulate_and_train_weights(
+                    symbol,
+                    train_slice,
+                    active_weights.clone(),
+                    &mut signal_generation_fn,
+                )
+                .await?;
 
             // 2. Evaluate Stage: Run out-of-sample backtest with frozen trained weights
-            let (oos_sharpe, oos_win_rate, oos_regret, rule_version) = self.evaluate_out_of_sample(
-                symbol,
-                test_slice,
-                trained_weights.clone(),
-                &mut signal_generation_fn,
-            ).await?;
+            let (oos_sharpe, oos_win_rate, oos_regret, rule_version) = self
+                .evaluate_out_of_sample(
+                    symbol,
+                    test_slice,
+                    trained_weights.clone(),
+                    &mut signal_generation_fn,
+                )
+                .await?;
 
             // 3. Overfitting Check: Measure performance degradation from train to test
             let degradation_ratio = if is_sharpe > 0.0 {
@@ -123,7 +135,8 @@ impl WalkForwardRunner {
                 0.0
             };
 
-            let passed_stability = oos_sharpe > 0.0 && degradation_ratio < self.config.overfitting_threshold;
+            let passed_stability =
+                oos_sharpe > 0.0 && degradation_ratio < self.config.overfitting_threshold;
 
             folds.push(FoldResult {
                 fold_index,
@@ -142,7 +155,7 @@ impl WalkForwardRunner {
 
             // Retain the trained weights to bootstrap the next fold step
             active_weights = trained_weights;
-            
+
             // Advance window pointer
             pointer += self.config.step_size;
             fold_index += 1;
@@ -164,7 +177,8 @@ impl WalkForwardRunner {
 
         // Generate algorithmic deployment recommendation based on validation metrics
         let overall_recommendation = if mean_out_of_sample_sharpe > 1.2 && stability_score >= 0.75 {
-            "DEPLOY_APPROVED: Strong out-of-sample performance with low parameter overfitting.".to_string()
+            "DEPLOY_APPROVED: Strong out-of-sample performance with low parameter overfitting."
+                .to_string()
         } else if mean_out_of_sample_sharpe > 0.5 && stability_score >= 0.50 {
             "CAUTION_DEGRADED: System shows mild edge, but parameters are vulnerable to regime changes.".to_string()
         } else {
@@ -190,7 +204,10 @@ impl WalkForwardRunner {
         signal_generation_fn: &mut F,
     ) -> Result<(f64, HashMap<String, f64>), String>
     where
-        F: FnMut(&[HistoricalCandle], &HashMap<String, f64>) -> Result<Option<Vec<SkillResult>>, String>,
+        F: FnMut(
+            &[HistoricalCandle],
+            &HashMap<String, f64>,
+        ) -> Result<Option<Vec<SkillResult>>, String>,
     {
         let mut returns = Vec::new();
         let mut position_open = false;
@@ -205,9 +222,9 @@ impl WalkForwardRunner {
                 let exit_price = current_candle.close;
                 let entry_price = slice[idx - 5].close;
                 let trade_pnl = (exit_price - entry_price) / entry_price;
-                
+
                 returns.push(trade_pnl);
-                
+
                 // Construct skill predictions matching trade direction
                 let skill_predictions: HashMap<String, f64> = pre_trade_weights
                     .keys()
@@ -251,7 +268,10 @@ impl WalkForwardRunner {
         signal_generation_fn: &mut F,
     ) -> Result<(f64, f64, f64, u32), String>
     where
-        F: FnMut(&[HistoricalCandle], &HashMap<String, f64>) -> Result<Option<Vec<SkillResult>>, String>,
+        F: FnMut(
+            &[HistoricalCandle],
+            &HashMap<String, f64>,
+        ) -> Result<Option<Vec<SkillResult>>, String>,
     {
         let mut returns = Vec::new();
         let mut position_open = false;
@@ -289,8 +309,16 @@ impl WalkForwardRunner {
         }
 
         let sharpe = self.calculate_sharpe_ratio(&returns);
-        let win_rate = if total_trades > 0 { wins as f64 / total_trades as f64 } else { 0.0 };
-        let avg_regret = if total_trades - wins > 0 { total_regret / (total_trades - wins) as f64 } else { 0.0 };
+        let win_rate = if total_trades > 0 {
+            wins as f64 / total_trades as f64
+        } else {
+            0.0
+        };
+        let avg_regret = if total_trades - wins > 0 {
+            total_regret / (total_trades - wins) as f64
+        } else {
+            0.0
+        };
 
         Ok((sharpe, win_rate, avg_regret, 1))
     }
@@ -301,10 +329,14 @@ impl WalkForwardRunner {
         }
 
         let mean: f64 = returns.iter().sum::<f64>() / returns.len() as f64;
-        let variance: f64 = returns.iter().map(|&r| {
-            let diff = r - mean;
-            diff * diff
-        }).sum::<f64>() / (returns.len() - 1) as f64;
+        let variance: f64 = returns
+            .iter()
+            .map(|&r| {
+                let diff = r - mean;
+                diff * diff
+            })
+            .sum::<f64>()
+            / (returns.len() - 1) as f64;
 
         let std_dev = variance.sqrt();
         if std_dev == 0.0 {
