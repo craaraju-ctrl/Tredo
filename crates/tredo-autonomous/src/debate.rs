@@ -344,7 +344,7 @@ pub async fn run_debate(
 
 /// Conservative degradation policy for partial information / data outages.
 /// Called from StrategyDecision / fallback paths when skills fail to deliver clean outputs.
-/// >2 missing critical skills => hard HOLD with zero levels (safety first).
+/// More than 2 missing critical skills results in hard HOLD with zero levels (safety first).
 /// This is the explicit safeguard against "trading with partial information".
 pub fn execute_conservative_degradation_policy(missing_skills_count: usize) -> DebateOutcome {
     if missing_skills_count > 2 {

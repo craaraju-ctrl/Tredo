@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 // --- Existing MetaControlAgent (kept for backward compat with weekly review etc.) ---
 
+#[allow(dead_code)]
 /// Minimum accuracy threshold before MetaControl adjusts skill weights.
 const SKILL_ACCURACY_MIN_SAMPLES: usize = 5;
 
@@ -29,7 +30,7 @@ impl MetaControlAgent {
 
     pub async fn tune_skill_weights(
         &self,
-        days_back: i64,
+        _days_back: i64,
     ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
         // Simplified stub for compilation; full logic from prior is in the file history.
         // In practice, this would call AttributionEngine as before.
@@ -96,7 +97,7 @@ impl EvolvedMetaControl {
     /// it automatically performs a `RULE_REVERT` back to the last stable snapshot.
     pub fn check_and_revert_if_degraded(
         &self,
-        current_config: &crate::risk_guardian::RiskGuardianConfig,
+        _current_config: &crate::risk_guardian::RiskGuardianConfig,
     ) -> Option<crate::risk_guardian::RiskGuardianConfig> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
         let active_version = self.current_version.load(Ordering::SeqCst);
@@ -161,7 +162,7 @@ impl EvolvedMetaControl {
     pub fn evaluate_and_adapt(
         &self,
         current_config: &crate::risk_guardian::RiskGuardianConfig,
-        current_regime: crate::regime_classifier::MarketRegime,
+        _current_regime: crate::regime_classifier::MarketRegime,
         regime_stable_for_ticks: usize,
     ) -> Option<crate::risk_guardian::RiskGuardianConfig> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();

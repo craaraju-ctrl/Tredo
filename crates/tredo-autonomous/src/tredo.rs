@@ -463,7 +463,7 @@ impl Tredo {
         self.verifier.reflector.state
             .add_cot_step(chain_id, "ReflectorAgent", &format!("Reflecting on decisions for {}", symbol),
                 if reflection.is_ok() { "REFLECTED" } else { "FAILED" },
-                &reflection.as_deref().unwrap_or("Reflection failed"),
+                reflection.as_deref().unwrap_or("Reflection failed"),
                 0.6,
                 Some(symbol.to_string()),
             ).await;

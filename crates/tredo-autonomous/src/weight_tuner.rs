@@ -76,7 +76,7 @@ impl AttributionEngine {
         let total_weight: f64 = updated_weights.values().sum();
         if total_weight > 0.0 {
             for val in updated_weights.values_mut() {
-                *val = *val / total_weight;
+                *val /= total_weight;
             }
         }
 

@@ -69,11 +69,10 @@ impl ExecutionCoordinator {
 
         // FSM Transition 3: Evaluating -> InPosition (if signals approve)
         if self.state == OrchestratorState::Evaluating {
-            let mut skills = Vec::new();
-            skills.push(SkillResult {
+            let skills = vec![SkillResult {
                 score: 0.65,
                 confidence: 0.85,
-            });
+            }];
 
             let skill_weights = shared.get_skill_weights();
             let aggregated = ConfluenceScorer::aggregate(skills, &skill_weights);

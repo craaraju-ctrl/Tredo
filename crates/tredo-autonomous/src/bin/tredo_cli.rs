@@ -74,8 +74,7 @@ async fn run_walk_forward(csv_path: &str, symbol: &str) -> Result<(), Box<dyn st
         &candles,
         initial_weights,
         |_slice, _weights| {
-            let mut results = Vec::new();
-            results.push(SkillResult { score: 0.65, confidence: 0.85 });
+            let results = vec![SkillResult { score: 0.65, confidence: 0.85 }];
             Ok(Some(results))
         }
     ).await?;

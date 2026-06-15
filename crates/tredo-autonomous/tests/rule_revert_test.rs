@@ -97,7 +97,7 @@ async fn test_automated_rule_revert_on_degraded_performance() {
     processor.register_pending_trade(pending);
 
     // 4. Resolve the trade, which triggers the evaluation rollback checks
-    let (weights, evolved_config) = processor.process_trade_close(
+    let (_weights, evolved_config) = processor.process_trade_close(
         "trigger_episode",
         54000.0,
         MarketRegime::TrendingBull,
