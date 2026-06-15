@@ -39,7 +39,7 @@ pub struct PreTradeSnapshot {
 }
 
 /// Lightweight record for closed episodes (adapt/extend existing ClosedEpisode in episode_store).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct OutcomeProcessor {
     pub db: EpisodeStore,
     pub weight_tuner: AttributionEngine,
@@ -113,12 +113,13 @@ impl OutcomeProcessor {
             direction: pre_trade.direction.clone(),
             entry_price: pre_trade.entry_price,
             exit_price,
-            raw_pnl: realized_pnl * pre_trade.entry_price, // Cash estimate
+            raw_pnl: realized_pnl * pre_trade.entry_price,
             pct_pnl: realized_pnl,
-            entry_time: now - 300, // Dummy offset representing 5-minute holds
+            entry_time: now - 300,
             exit_time: now,
             was_correct,
             regret_score,
+            rule_version: pre_trade.rule_version,
         };
 
         // 3. Backpropagate learning rewards or penalties to optimize skill weights
@@ -146,57 +147,25 @@ impl OutcomeProcessor {
     }
 }
 
-// Supporting types (stubs / minimal impls aligned with previous refactors)
+use crate::risk_guardian::RiskGuardianConfig;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RiskGuardianConfig {
-    pub max_risk_per_trade: f64,
-    // ... other fields as needed
+/// Intermediate record for closed episodes — used by OutcomeProcessor to pass
+/// trade results to EpisodeStore for persistence.
+#[derive(Debug, Clone)]
+pub struct ClosedEpisodeRecord {
+    pub episode_id: String,
+    pub symbol: String,
+    pub direction: String,
+    pub entry_price: f64,
+    pub exit_price: f64,
+    pub raw_pnl: f64,
+    pub pct_pnl: f64,
+    pub entry_time: u64,
+    pub exit_time: u64,
+    pub was_correct: bool,
+    pub regret_score: f64,
+    pub rule_version: u32,
 }
-
-impl RiskGuardianConfig {
-    pub fn default_fallback() -> Self {
-        Self { max_risk_per_trade: 0.01 }
-    }
-}
-
-// Extend or wrap existing MetaControlAgent as EvolvedMetaControl for the new API
-pub struct EvolvedMetaControl {
-    // In real impl this would hold reference to EpisodeStore, thresholds etc.
-    // For now we keep a minimal version that decides based on regime stability
-}
-
-impl EvolvedMetaControl {
-    pub fn new(_db: EpisodeStore, _learning_rate: f64, _min_stable_ticks: usize) -> Self {
-        Self {}
-    }
-
-    /// Regime-conditional adaptation. If regime has not been stable for enough ticks,
-    /// return None (suppress changes). Otherwise return an (optionally) evolved config.
-    pub fn evaluate_and_adapt(
-        &self,
-        current: &RiskGuardianConfig,
-        _regime: MarketRegime,
-        regime_stable_for_ticks: usize,
-    ) -> Option<RiskGuardianConfig> {
-        const MIN_STABLE_TICKS: usize = 5;
-        if regime_stable_for_ticks < MIN_STABLE_TICKS {
-            return None; // suppress risk squeezing / rule changes during transitions
-        }
-
-        // Placeholder: in full impl would call the weight_tuner + LLM review
-        // and potentially return a tighter config. For the provided tests we return
-        // None on profitable stable trades and on unstable losing trades.
-        Some(current.clone())
-    }
-}
-
-// Re-export / alias for the episode store record used by the processor
-pub use crate::episode_store::ClosedEpisode as ClosedEpisodeRecord; // adapt if the record struct differs
-
-// Note: the processor calls db.close_episode(&record, &skill_predictions).
-// Ensure episode_store has a matching method (or implement a thin wrapper).
-// In practice we previously added insert_closed_trade and snapshots; this bridges it.
 
 #[cfg(test)]
 mod tests {
@@ -211,12 +180,7 @@ mod tests {
     #[tokio::test]
     async fn test_outcome_processor_learning_loop() {
         // 1. Initialize our persistent database mock connection
-        let connection_uri = "sqlite::memory:";
-        let db_store = EpisodeStore::new(connection_uri);
-        
-        // Ensure the SQLite schema is verified and tables are initialized
-        // (in real code this would be called; for this test skeleton we assume it succeeds)
-        // db_store.verify_and_initialize_schema().expect("Schema initialization must succeed");
+        let db_store = EpisodeStore::open("file::memory:?cache=shared").expect("Failed to create in-memory EpisodeStore");
 
         // 2. Set up our analytical and learning engines with the symmetric math
         let base_learning_rate = 0.10; // 10% adjustments
@@ -230,8 +194,8 @@ mod tests {
         let episode_id = "test_episode_001".to_string();
         
         let mut active_weights = HashMap::new();
-        active_weights.insert("news_analyser".to_string(), 0.50);
-        active_weights.insert("market_metrics_meter".to_string(), 0.50);
+        active_weights.insert("news_analyser".to_string(), 0.25);
+        active_weights.insert("market_metrics_meter".to_string(), 0.25);
 
         let mut skill_predictions = HashMap::new();
         // Both skills predicted a highly confident bullish direction
@@ -252,7 +216,7 @@ mod tests {
 
         // 4. Simulate a market close event (Trade successfully hits the profit target)
         let exit_price = 68250.0; // Represents a +5% profit before fees
-        let current_regime = MarketRegime::BullTrending;
+        let current_regime = MarketRegime::TrendingBull;
         let regime_stable_for_ticks = 10; // Regime is highly stable, permitting learning updates
         
         let current_config = RiskGuardianConfig::default_fallback();
@@ -274,6 +238,7 @@ mod tests {
 
         let news_weight = updated_weights.get("news_analyser").copied().unwrap_or(0.0);
         let metrics_weight = updated_weights.get("market_metrics_meter").copied().unwrap_or(0.0);
+        // news_analyser was more accurate (0.80 vs 0.60) → should get higher weight
         assert!(news_weight > metrics_weight, "The more accurate skill must be assigned higher weight");
 
         assert!(evolved_config.is_none(), "MetaControl should not reduce risk during profitable periods");
@@ -281,9 +246,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_regime_stability_and_meta_control_risk_squeezing() {
-        let connection_uri = "sqlite::memory:";
-        let db_store = EpisodeStore::new(connection_uri);
-        // db_store.verify_and_initialize_schema().expect("Schema init must succeed");
+        let db_store = EpisodeStore::open("file::memory:?cache=shared").expect("Failed to create in-memory EpisodeStore");
 
         let weight_tuner = AttributionEngine::new(0.10);
         let meta_control = EvolvedMetaControl::new(db_store.clone(), 0.05, 1);
@@ -312,7 +275,7 @@ mod tests {
         processor.register_pending_trade(snapshot);
 
         let exit_price = 55000.0; // Significant drawdown
-        let current_regime = MarketRegime::HighVolMeanReverting;
+        let current_regime = MarketRegime::Volatile;
         let regime_stable_for_ticks = 2; // LESS than 5 ticks, indicating structural transition
         let current_config = RiskGuardianConfig::default_fallback();
 

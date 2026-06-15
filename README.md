@@ -31,30 +31,33 @@ tredo uses a **two-tier hierarchical architecture** with temporal loops and laye
 ### System Layers
 
 **UI Layer** (Primary: ratatui TUI, Secondary: Tauri)
-- Real-time COT tree, rules view, portfolio dashboard, agent tree, and trading desk.
-- Keyboard-driven for low-latency desk use.
+- Real-time COT log, portfolio dashboard, agent tree, rules view, model selection, and watchlist.
+- **Agent & Sub-Agent Tree**: Hierarchical tree view of all 16 sub-agents with color-coded action badges (🟢 PASS, 🔴 FAIL, 🟡 HOLD, 🔵 START), skill score bars with direction icons, confidence %, and live reasoning sub-lines.
+- **Skill Consensus**: Aggregated signal header showing net score, conviction, bullish/bearish/neutral breakdown.
+- Keyboard-driven (Tab/1-8/↑↓/q/Enter/r) for low-latency desk use.
 
 **Orchestration Layer** (`tredo-orchestrator`)
 - Fast loop (5s): Price updates + automatic SL/TP management in paper mode.
-- Medium loop (5m): Full pipeline (Market Intelligence → Debate → Decision → Risk → Execution).
+- Medium loop (5m): Full pipeline (Market Intelligence → Debate → Decision → Risk → Execution) with **per-sub-agent COT entry pushing** (16 sub-agents each log their action, confidence, and reasoning).
 - Slow loop (24h or on-demand): Reflection + MetaControl rule adaptation.
+- HTTP API: `/api/skills` for real-time skill votes + aggregated signal, `/api/agents` for hierarchy tree JSON.
 
 **Agent Layer** (`tredo-autonomous`)
-- **Identifier** group: Market scanning, intelligence, patterns, pivots, confluence, session timing.
-- **Verifier** group: Risk, psychology, reflection.
-- **Executer** group: Strategy decision (debate-driven), portfolio management, execution coordination.
+- **Identifier** group: Market scanning, intelligence, patterns, pivots, confluence, session timing, news analysis, market metrics (Bollinger, ATR, Stochastics, RSI, volume profile).
+- **Verifier** group: Risk, psychology, reflection, drawdown monitoring, overtrading prevention.
+- **Executer** group: Strategy decision (debate-driven), portfolio management, execution coordination (FSM-based).
 - **Guardian** group: Drawdown monitoring, overtrading prevention, outcome logging.
 - **MetaControl**: Learns from regret and mutates rules.
 
 **Core Layer** (`tredo-core`)
 - `DisciplinedCore`: Hard Rust gates (pivots, trend, confluence, position sizing, drawdown, session rules).
-- `AgentSkill` trait: Pluggable deterministic capabilities (sentiment, volatility, regime, on-chain proxy, correlation, trained memory recall).
+- `AgentSkill` trait: Pluggable deterministic capabilities (sentiment, volatility, regime, on-chain proxy, correlation, trained memory recall, news analysis, market metrics).
 - Layered memory: redb (hot state), VectorMemory + embeddings (semantic recall), SQLite episode store (regret + history), agentmemory (long-term shared).
-- LLM executor (Ollama primary), Kronos client (forecast sidecar with graceful fallback), pattern detectors, paper execution engine.
+- LLM executor (Ollama primary, configurable via `LLM_MODEL` env var, default `nemotron-3-nano:4b`), Kronos client (forecast sidecar with graceful fallback), pattern detectors, paper execution engine.
 
 **External Services**
 - Live market data (Binance for crypto, Yahoo for stocks).
-- Ollama (local LLM).
+- Ollama (local LLM, model set via `LLM_MODEL=nemotron-3-nano:4b`).
 - Kronos (time-series forecasting service).
 - Optional agentmemory service for cross-session intelligence.
 
@@ -112,7 +115,8 @@ Paper trading is the default and strongly recommended until you have extensive v
 - `crates/tredo-core` — Rules, memory, LLM client, paper engine, skills trait.
 - `crates/tredo-autonomous` — Agent hierarchy, debate, reflection, meta-control, state.
 - `crates/tredo-orchestrator` — Temporal loops and API server.
-- `crates/tredo-tui` — Primary ratatui Terminal UI.
+- `crates/tredo-tui` — Primary ratatui Terminal UI (Agent Tree, skill scores, COT log, color legend).
+- `crates/tredo-orchestrator` — Temporal loops & API server (`/api/skills`, `/api/agents`).
 - `src-tauri` — Secondary desktop UI (Tauri).
 - `kronos_service` — Optional Python time-series forecast sidecar.
 
@@ -264,7 +268,7 @@ quadrantChart
 | **Core Language** | Rust + Tokio | Async, safe, performant trading engine |
 | **State & KV** | redb | Embedded key-value store for memory |
 | **Vector Memory** | LanceDB | Semantic similarity for episode retrieval |
-| **LLM** | Ollama (ministral-3) | Selective reasoning + reflection |
+| **LLM** | Ollama (nemotron-3-nano:4b default, configurable via `LLM_MODEL`) | Selective reasoning + reflection |
 | **Forecast** | Kronos (Python) | Time-series price prediction |
 | **UI** | Tauri 2 + Vanilla JS | Native desktop SPA with 5 pages |
 | **Charting** | TradingView / Canvas | Real-time market visualization |

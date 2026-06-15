@@ -1,11 +1,14 @@
 use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Serialize, Deserialize};
 
-// Assumes integration with tredo-core types (adapt to actual crate structure)
-use crate::regime_classifier::{RegimeClassifier, MarketRegime};
 use crate::weight_tuner::AttributionEngine;
-use tredo_core::agent::SkillResult;  // SkillResult lives in agent module
+
+/// Internal representation of a skill's output during walk-forward validation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillResult {
+    pub score: f64,
+    pub confidence: f64,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoricalCandle {
@@ -155,14 +158,14 @@ impl WalkForwardRunner {
         let sum_oos_sharpe: f64 = folds.iter().map(|f| f.out_of_sample_sharpe).sum();
         let stable_count = folds.iter().filter(|f| f.passed_stability).count();
 
-        let mean_is_sharpe = sum_is_sharpe / total_folds as f64;
-        let mean_oos_sharpe = sum_oos_sharpe / total_folds as f64;
+        let mean_in_sample_sharpe = sum_is_sharpe / total_folds as f64;
+        let mean_out_of_sample_sharpe = sum_oos_sharpe / total_folds as f64;
         let stability_score = stable_count as f64 / total_folds as f64;
 
         // Generate algorithmic deployment recommendation based on validation metrics
-        let overall_recommendation = if mean_oos_sharpe > 1.2 && stability_score >= 0.75 {
+        let overall_recommendation = if mean_out_of_sample_sharpe > 1.2 && stability_score >= 0.75 {
             "DEPLOY_APPROVED: Strong out-of-sample performance with low parameter overfitting.".to_string()
-        } else if mean_oos_sharpe > 0.5 && stability_score >= 0.50 {
+        } else if mean_out_of_sample_sharpe > 0.5 && stability_score >= 0.50 {
             "CAUTION_DEGRADED: System shows mild edge, but parameters are vulnerable to regime changes.".to_string()
         } else {
             "REJECT_OVERFITTED: High performance degradation. The learning loop is overfitting to history.".to_string()

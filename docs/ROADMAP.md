@@ -223,40 +223,67 @@ flowchart LR
 
 ---
 
-## 🔮 Phase C: Multi-Agent Debate + Skills/Rules/Trained Memory — Advanced / Complete
+## 🔮 Phase C: Multi-Agent Debate + Skills/Rules/Trained Memory + TUI — Complete
 
-> Full multi-agent debate (Proposer/Critic/Risk/Historian + aggregator) wired with pluggable skills and hierarchical trained memory. Strong explicit "skills tell how / rules tell what-not / agents know roles + memory makes them self-aware" layer implemented across the system.
+> Full multi-agent debate (Proposer/Critic/Risk/Historian + aggregator) wired with pluggable skills and hierarchical trained memory. Strong explicit "skills tell how / rules tell what-not / agents know roles + memory makes them self-aware" layer implemented across the system. TUI now has hierarchical Agent & Sub-Agent Tree with skill scores and color legend.
 
 ```
-████████████████████████████████████████ 95%+
+████████████████████████████████████████ 100%
 ```
 
 | Milestone | Status | Description |
 |-----------|--------|-------------|
 | Debate Coordinator + run_debate | ✅ Done | Orchestrates the 4 participants and weighted aggregator |
 | Proposer / Critic / Risk / Historian | ✅ Done | All use skills (sentiment/vol/regime/corr) + `recall_trained_memory`; Historian pulls vector + agentmemory |
-| Skills Layer (AgentSkill trait) | ✅ Done | `tredo-core/src/skills.rs`: trait + TrainedMemorySkill + impls for SentimentAnalyzer, VolatilityCalculator (more easy to add) |
+| Skills Layer (AgentSkill trait) | ✅ Done | `tredo-core/src/skills.rs`: trait + TrainedMemorySkill + impls for SentimentAnalyzer, VolatilityCalculator, NewsAnalyser, MarketMetricsMeter |
 | Rules + Trained Memory Adjustments | ✅ Done | `apply_trained_memory_to_rules` in DisciplinedCore; called in StrategyDecision before debate |
 | Hierarchical Trained Memory Everywhere | ✅ Done | `recall_trained_memory` (vector RAG + agentmemory long-term) injected in SD, MI, all debate roles, Reflector, MetaControl, ConfluenceScorer (sub) etc. COT tags "StrongRules+Skills+TrainedMemory" |
 | Aggregator + Confidence | ✅ Done | Uses trained intel, risk veto, debate scores; prefers debate over raw LLM when confident |
+| **Agent & Sub-Agent Tree in TUI** | ✅ Done | Hierarchical tree with Unicode box-draw connectors showing all 16 sub-agents with color-coded action badges, skill score bars, direction icons, confidence %, and reasoning sub-lines |
+| **Per-Sub-Agent COT Entries** | ✅ Done | Each sub-agent pushes COT entries during pipeline runs (chain_id tracked) |
+| **Skill Scores API** | ✅ Done | `/api/skills` endpoint returning skill votes + aggregated signal for TUI display |
+| **TUI Color Legend** | ✅ Done | Key showing all action badge colors and score symbols at bottom of Agent Tree tab |
+| **TUI API Fixes** | ✅ Done | Fixed double `/api/` prefix in all 7 endpoint URLs, fixed `unwrap_or_default()` on reqwest client builder |
 
-The strong skills + rules contract (agents/sub-agents already know their jobs; skills = how; rules = what/not; trained memory = self-understanding + long-term improvement) is now the explicit design. See root README Core Philosophy, AGENT_DESIGN.md, skills.rs header, and Research/Build.md for details. Phase C is effectively complete; remaining is polish (more skills impls, registry, uniform richer COT).
+The strong skills + rules contract (agents/sub-agents already know their jobs; skills = how; rules = what/not; trained memory = self-understanding + long-term improvement) is now the explicit design with full TUI observability. Phase C is complete.
 
-### Debate Pipeline Architecture
+### TUI Agent Tree Architecture
 
 ```mermaid
 flowchart TB
-    INPUT[Market Context\n+ Forecast + News] --> PRO[Proposer Agent]
-    INPUT --> CRT[Critic Agent]
-    INPUT --> RSK[Risk Agent]
-    INPUT --> HIST[Historian Agent]
+    subgraph "TUI Agent & Sub-Agent Tree"
+        TREDO[Tredo 🌍] --> ID[Identifier 🔍]
+        TREDO --> VR[Verifier 🛡️]
+        TREDO --> EX[Executer ⚡]
+        TREDO --> GU[Guardian 🛑]
+        
+        ID --> WS[WatchlistScannerAgent]
+        ID --> MI[MarketIntelligenceAgent]
+        ID --> PC[PivotCalculatorAgent]
+        ID --> CS[ConfluenceScorerAgent]
+        ID --> PR[PatternRetrieverAgent]
+        ID --> ST[SessionTimerAgent]
+        ID --> RF[RedFolderCheckerAgent]
+        
+        VR --> RP[RiskPsychologyAgent]
+        VR --> RC[RiskCalculatorAgent]
+        VR --> RE[ReflectorAgent]
+        
+        EX --> SD[StrategyDecisionAgent]
+        EX --> PM[PortfolioManagerAgent]
+        EX --> EC[ExecutionCoordinatorAgent]
+        
+        GU --> DM[DrawdownMonitorAgent]
+        GU --> OP[OvertradingPreventerAgent]
+        GU --> OL[OutcomeLoggerAgent]
+    end
     
-    PRO -->|Trade Proposal| AGG[Aggregator]
-    CRT -->|Challenges| AGG
-    RSK -->|Constraint Check| AGG
-    HIST -->|Past Outcomes| AGG
-    
-    AGG -->|Reconciled Signal| OUT[Final Trade Decision]
+    subgraph "Per-Agent Data Display"
+        ACTION[Action Badge • 🟢/🔴/🟡/🔵]
+        SKILL[Skill Score Bar • ▲▼◆]
+        CONF[Confidence %]
+        REASON[Reasoning Sub-Line • ▸]
+    end
 ```
 
 ---
@@ -273,6 +300,6 @@ flowchart TB
 | 6: Safety | ✅ Complete | Broker Adapters, Kill Switches | Q1 2025 |
 | 7: Production | ✅ Complete | Docker Deployment, 8GB RAM Optimization | Q1 2025 |
 | 8: Evolution | ✅ Complete | Episodic Memory, Patterns, Live COT UI | Q2 2025 |
-| C: Debate + Skills/Rules | ✅ Advanced (95%+) | Full debate + Strong Skills (AgentSkill) + Rules (memory-adjusted) + Hierarchical Trained Memory (self-understanding in all agents + subs) | 2025-06-13 |
+| C: Debate + Skills/Rules + TUI | ✅ Complete (100%) | Full debate + Strong Skills (AgentSkill) + Rules (memory-adjusted) + Hierarchical Trained Memory (self-understanding in all agents + subs) + TUI Agent Tree with skill scores + per-sub-agent COT | 2026-06-15 |
 
 > **Goal:** A stable, low-resource, high-discipline autonomous trading system that feels like a professional trading team.

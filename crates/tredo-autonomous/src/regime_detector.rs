@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use std::error::Error;
 use tredo_core::{skills::AgentSkill, AgentInput, AgentOutput};
 
+#[derive(Debug)]
 pub struct RegimeDetector {
     pub state: SharedState,
 }

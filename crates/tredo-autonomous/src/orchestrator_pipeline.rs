@@ -157,7 +157,7 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
         // Runs market analysis + session timer + red folder checks.
         // Agent observes latest data and computes its own indicators (trend, patterns, volume, RSI, MACD etc. via skills).
         let (discipline_ok, confluence, pivots) =
-            tredo.run_identifier(symbol, observed_price).await?;
+            tredo.run_identifier(symbol, observed_price, chain_id).await?;
 
         if !discipline_ok {
             self.state
@@ -217,7 +217,7 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
             let portfolio = self.state.portfolio.read().await;
             portfolio.total_equity
         };
-        let risk = tredo.run_verifier(symbol, observed_price, equity).await?;
+        let risk = tredo.run_verifier(symbol, observed_price, equity, chain_id).await?;
         let risk_passed = risk.recommendation != crate::types::RiskRecommendation::Halt;
 
         self.state
@@ -274,7 +274,7 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
         // The agent decides direction + its own entry/SL/TP using the aggregated signal.
         // We deliberately do *not* pass pre-computed entry/stop/target from the orchestrator.
         let signal_opt = tredo
-            .run_executer_with_aggregation(symbol, observed_price, aggregated_signal.as_ref())
+            .run_executer_with_aggregation(symbol, observed_price, aggregated_signal.as_ref(), chain_id)
             .await?;
 
         match &signal_opt {

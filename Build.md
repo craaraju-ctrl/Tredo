@@ -89,8 +89,8 @@ cargo install cargo-watch
 **Ollama (primary LLM — Rust client in core/llm.rs is excellent):**
 ```bash
 ollama serve &
-ollama pull ministral:3b   # or your preferred small/fast model
-# Set via env: OLLAMA_MODEL=...
+ollama pull nemotron-3-nano:4b   # or your preferred small/fast model
+# Set via env: LLM_MODEL=nemotron-3-nano:4b
 ```
 
 **Optional but useful:**
@@ -191,7 +191,7 @@ source config/tredo.env
 - Fast loop: price updates, SL/TP monitoring.
 - Medium loop: MarketIntelligence (pivots, confluence, patterns, Kronos forecast) → debate (when complete) → StrategyDecision (after DisciplinedCore gate + memory recall) → risk/psych validation → paper execution → episode stored.
 - Slow loop: load recent episodes → deep reflection (regret + lessons) → MetaControl reviews high-regret items and can propose rule updates.
-- TUI shows rich COT tree with skills/rules/trained-memory tags.
+- TUI shows rich COT tree with skills/rules/trained-memory tags, hierarchical Agent Tree with colored action badges and skill score bars.
 - redb + history db grow with real episodes.
 
 Always keep `PAPER_MODE=true` until the full self-evolution loop (reflection → adaptation → measurable improvement) has been validated for a long time.

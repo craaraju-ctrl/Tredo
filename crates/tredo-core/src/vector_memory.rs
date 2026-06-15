@@ -240,7 +240,76 @@ mod lance_backend {
 #[cfg(feature = "lancedb")]
 use lance_backend::LanceDbBackend;
 
-// ── Data Types (unchanged) ──────────────────────────────────────────────────
+// ── Embedding Generator Trait ───────────────────────────────────────────────
+
+/// Trait for generating embeddings from text. Implemented by LlmExecutor.
+pub trait EmbeddingGenerator {
+    fn embed_text_blocking(&self, text: &str) -> Vec<f32>;
+}
+
+// ── EpisodicVectorRecord ────────────────────────────────────────────────────
+
+/// A lightweight record for vectorized episodic memory with versioned context.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EpisodicVectorRecord {
+    pub episode_id: String,
+    pub embedding: Vec<f32>,
+    pub epoch_timestamp: u64,
+    pub net_pnl_pct: f64,
+    pub trade_direction: String,
+    pub rule_version: u32,
+    pub context_json: String,
+}
+
+/// LanceMemoryStore — an in-memory store of EpisodicVectorRecord with
+/// serialization helpers for version-tagged context strings.
+///
+/// Generic over `E: EmbeddingGenerator` so the embedding mechanism can be
+/// injected (e.g. LlmExecutor or a mock for testing).
+#[derive(Debug, Clone)]
+pub struct LanceMemoryStore<E: EmbeddingGenerator> {
+    pub records: Vec<EpisodicVectorRecord>,
+    pub dimension: usize,
+    pub embedder: E,
+}
+
+impl<E: EmbeddingGenerator> LanceMemoryStore<E> {
+    pub fn new(dimension: usize, embedder: E) -> Self {
+        Self {
+            records: Vec::new(),
+            dimension,
+            embedder,
+        }
+    }
+
+    /// Serializes context while binding the operational version directly to the payload string.
+    pub fn serialize_context_with_version(
+        &self,
+        snapshot: &std::collections::HashMap<String, f64>,
+        rule_version: u32,
+    ) -> String {
+        let mut metrics: Vec<String> = snapshot
+            .iter()
+            .map(|(s, v)| format!("{}:{:.2}", s, v))
+            .collect();
+        metrics.sort();
+        format!("v{} | Context: [{}]", rule_version, metrics.join(", "))
+    }
+
+    pub fn push(&mut self, record: EpisodicVectorRecord) {
+        self.records.push(record);
+    }
+
+    pub fn len(&self) -> usize {
+        self.records.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.records.is_empty()
+    }
+}
+
+// ── Data Types ──────────────────────────────────────────────────
 
 /// A stored vector entry with metadata for similarity search.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -266,6 +335,7 @@ pub struct SimilarResult {
 
 // ── JSON Fallback Backend (always available) ──────────────────────────────
 
+#[derive(Debug)]
 struct JsonBackend {
     entries: HashMap<String, VectorEntry>,
     db_path: String,
@@ -368,6 +438,7 @@ impl JsonBackend {
 ///
 /// LanceDB is initialized lazily on the first `store()` call (to keep the
 /// constructor synchronous). If LanceDB init fails, it falls back to JSON.
+#[derive(Debug)]
 pub struct VectorMemory {
     #[cfg(feature = "lancedb")]
     lancedb: Option<LanceDbBackend>,

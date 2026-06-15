@@ -813,6 +813,15 @@ async fn get_agent_tree() -> impl axum::response::IntoResponse {
     Json(tredo_autonomous::Tredo::tree_json())
 }
 
+async fn get_skill_scores(State(state): State<WebState>) -> impl axum::response::IntoResponse {
+    let votes = state.orchestrator.state.last_skill_votes.read().await;
+    let aggregated = state.orchestrator.state.last_aggregated_signal.read().await;
+    Json(serde_json::json!({
+        "votes": *votes,
+        "aggregated": *aggregated,
+    }))
+}
+
 async fn fetch_live_stock_price(
     axum::extract::Query(req): axum::extract::Query<PriceQuery>,
 ) -> impl axum::response::IntoResponse {
@@ -1153,6 +1162,7 @@ async fn main() {
         .route("/backtest", get(run_backtest))
         .route("/price", get(fetch_live_stock_price))
         .route("/agents", get(get_agent_tree))
+        .route("/skills", get(get_skill_scores))
         .route("/watchlist", get(get_watchlist))
         .route("/watchlist/add", post(add_to_watchlist))
         .route("/watchlist/remove", post(remove_from_watchlist))

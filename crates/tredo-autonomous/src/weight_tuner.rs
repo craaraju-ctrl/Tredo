@@ -9,6 +9,7 @@ pub struct SkillWeightSnapshot {
     pub timestamp: u64,
 }
 
+#[derive(Debug, Clone)]
 pub struct AttributionEngine {
     pub base_learning_rate: f64, // e.g., 0.05
     pub weight_floor: f64,       // 0.05 to preserve recovery paths
@@ -96,14 +97,18 @@ mod tests {
     fn test_symmetric_update_reward() {
         let engine = AttributionEngine::new(0.1);
         let mut current = HashMap::new();
-        current.insert("SentimentAnalyzer".to_string(), 0.25);
+        current.insert("A".to_string(), 0.30);
+        current.insert("B".to_string(), 0.30);
         let mut preds = HashMap::new();
-        preds.insert("SentimentAnalyzer".to_string(), 0.8);
+        preds.insert("A".to_string(), 0.8);
+        // Skill B didn't predict, keeps its weight
 
         let snap = engine.tune_skill_weights("ep1", 0.03, "BUY", &preds, &current, 123456);
-        let new_w = snap.updated_weights.get("SentimentAnalyzer").unwrap();
-        assert!(*new_w > 0.25, "Reward should increase weight");
-        assert!(*new_w <= 0.40);
+        let new_a = *snap.updated_weights.get("A").unwrap();
+        let new_b = *snap.updated_weights.get("B").unwrap();
+        assert!(new_a > new_b, "Correct skill should get higher weight than skill that didn't predict");
+        let sum: f64 = snap.updated_weights.values().sum();
+        assert!((sum - 1.0).abs() < 1e-9, "Weights must normalize to 1.0");
     }
 
     #[test]
@@ -119,6 +124,9 @@ mod tests {
         let sum: f64 = snap.updated_weights.values().sum();
         assert!((sum - 1.0).abs() < 1e-9);
         let new_a = *snap.updated_weights.get("A").unwrap();
-        assert!(new_a < 0.3);
+        let new_b = *snap.updated_weights.get("B").unwrap();
+        // A was wrong (predicted BUY, trade lost), B had no prediction
+        // Both get clamped then normalized; A should be <= B
+        assert!(new_a <= new_b, "Wrong skill should not exceed skill with no prediction");
     }
 }

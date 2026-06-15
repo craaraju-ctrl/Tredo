@@ -10,6 +10,7 @@
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -17,7 +18,7 @@ use crate::weight_tuner::SkillWeightSnapshot;
 
 // ── Closed Trade Episode ───────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ClosedEpisode {
     pub id: String,
@@ -130,7 +131,7 @@ pub struct SkillPerformanceRow {
 /// Uses `Arc<Mutex<Connection>>` because rusqlite's Connection is not Send.
 /// All writes go through blocking operations — this is fine because SQLite WAL
 /// mode makes reads non-blocking and writes are infrequent (only on trade close).
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct EpisodeStore {
     conn: Arc<Mutex<Connection>>,
 }
@@ -348,20 +349,6 @@ impl EpisodeStore {
         Ok(())
     }
 
-    pub fn insert_rule_snapshot(&self, snap: &RuleSnapshot) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.lock().expect("lock");
-        conn.execute(
-            "INSERT OR REPLACE INTO rule_snapshots (snapshot_id, rule_version, rules_json, skill_weights, created_at, performance_after, trades_evaluated)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![
-                snap.snapshot_id, snap.rule_version, snap.rules_json,
-                serde_json::to_string(&snap.skill_weights).unwrap_or_default(),
-                snap.created_at, snap.performance_after, snap.trades_evaluated
-            ],
-        )?;
-        Ok(())
-    }
-
     pub fn insert_skill_weight_snapshot(&self, snap: &SkillWeightSnapshot) -> Result<(), rusqlite::Error> {
         let conn = self.conn.lock().expect("lock");
         conn.execute(
@@ -387,64 +374,10 @@ impl EpisodeStore {
         rows.collect()
     }
 
+
+
     /// Load recent closed trades (for performance evaluation and rollback checks).
-    /// Filters by rule_version if provided.
-    pub fn load_recent_closed_trades(&self, limit: usize, rule_version: Option<u32>) -> Result<Vec<ClosedEpisode>, rusqlite::Error> {
-        let conn = self.conn.lock().expect("lock");
-        let sql = if let Some(v) = rule_version {
-            format!(
-                "SELECT id, symbol, direction, entry_price, exit_price, stop_loss, take_profit,
-                        position_size, pnl, pnl_pct, outcome, exit_reason, regret_score, lesson,
-                        confluence_score, portfolio_heat, market_regime, session, agent_reasoning,
-                        consecutive_losses_at_entry, entry_time, exit_time, rule_version
-                 FROM closed_trades WHERE rule_version = {} ORDER BY entry_time DESC LIMIT ?1",
-                v
-            )
-        } else {
-            "SELECT id, symbol, direction, entry_price, exit_price, stop_loss, take_profit,
-                    position_size, pnl, pnl_pct, outcome, exit_reason, regret_score, lesson,
-                    confluence_score, portfolio_heat, market_regime, session, agent_reasoning,
-                    consecutive_losses_at_entry, entry_time, exit_time, rule_version
-             FROM closed_trades ORDER BY entry_time DESC LIMIT ?1".to_string()
-        };
-        let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map(params![limit as i64], row_to_episode)?;
-        let mut results = Vec::new();
-        for row in rows {
-            results.push(row?);
-        }
-        Ok(results)
-    }
-
-    /// Update performance_after on a RuleSnapshot after evaluating trailing trades.
-    pub fn update_snapshot_performance(&self, snapshot_id: &str, performance: f64, trades: u32) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.lock().expect("lock");
-        conn.execute(
-            "UPDATE rule_snapshots SET performance_after = ?1, trades_evaluated = ?2 WHERE snapshot_id = ?3",
-            params![performance, trades, snapshot_id],
-        )?;
-        Ok(())
-    }
-
-    pub fn get_rule_snapshot(&self, version: u32) -> Result<Option<RuleSnapshot>, rusqlite::Error> {
-        let conn = self.conn.lock().expect("lock");
-        let mut stmt = conn.prepare(
-            "SELECT version, config_json, baseline_win_rate, baseline_avg_regret, timestamp FROM rule_snapshots WHERE version = ?1"
-        )?;
-        let mut rows = stmt.query_map(params![version as i64], |row| {
-            Ok(RuleSnapshot {
-                version: row.get(0)?,
-                config_json: row.get(1)?,
-                baseline_win_rate: row.get(2)?,
-                baseline_avg_regret: row.get(3)?,
-                timestamp: row.get(4)?,
-            })
-        })?;
-        rows.next().transpose()
-    }
-
-    /// Load recent closed trades, optionally filtered by rule_version.
-    /// Returns ClosedEpisode (aliased as ClosedEpisodeRecord in some contexts) with was_correct and regret_score.
+    /// Filters by rule_version if provided. Includes was_correct for win rate calculation.
     pub fn load_recent_closed_trades(&self, limit: usize, rule_version: Option<u32>) -> Result<Vec<ClosedEpisode>, rusqlite::Error> {
         let conn = self.conn.lock().expect("lock");
         let sql = if let Some(v) = rule_version {
@@ -491,49 +424,6 @@ impl EpisodeStore {
         Ok(results)
     }
 
-    pub fn fetch_recent_regret_scores(&self, limit: usize) -> Result<Vec<f64>, rusqlite::Error> {
-        let conn = self.conn.lock().expect("lock");
-        let mut stmt = conn.prepare(
-            "SELECT regret_score FROM closed_trades ORDER BY entry_time DESC LIMIT ?1"
-        )?;
-        let rows = stmt.query_map(params![limit as i64], |row| row.get(0))?;
-        rows.collect()
-    }
-
-    pub fn insert_rule_snapshot(&self, snapshot: RuleSnapshot) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.lock().expect("lock");
-        conn.execute(
-            "INSERT OR REPLACE INTO rule_snapshots (version, config_json, baseline_win_rate, baseline_avg_regret, timestamp) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                snapshot.version as i64,
-                snapshot.config_json,
-                snapshot.baseline_win_rate,
-                snapshot.baseline_avg_regret,
-                snapshot.timestamp as i64
-            ],
-        )?;
-        Ok(())
-    }
-
-    pub fn record_rule_change(&self, rule_name: &str, value: &str, reason: &str, ts: u64) -> Result<(), rusqlite::Error> {
-        // Adapt to existing insert_rule_change if signature differs; use a simple insert.
-        let conn = self.conn.lock().expect("lock");
-        conn.execute(
-            "INSERT INTO rule_changes (rule_name, new_value, reason, applied_at) VALUES (?1, ?2, ?3, ?4)",
-            params![rule_name, value, reason, ts.to_string()],
-        )?;
-        Ok(())
-    }
-
-    pub fn insert_cot_log(&self, agent: &str, action: &str, reason: &str, ts: u64) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.lock().expect("lock");
-        conn.execute(
-            "INSERT INTO cot_logs (agent, action, reason, ts) VALUES (?1, ?2, ?3, ?4)",
-            params![agent, action, reason, ts.to_string()],
-        )?;
-        Ok(())
-    }
-
     /// Get a RuleSnapshot by version for revert logic.
     pub fn get_rule_snapshot(&self, version: u32) -> Result<Option<RuleSnapshot>, rusqlite::Error> {
         let conn = self.conn.lock().expect("lock");
@@ -554,7 +444,6 @@ impl EpisodeStore {
     }
 
     /// Fetch recent regret scores (for high regret detection in evaluate_and_adapt).
-    /// Uses regret_score from closed_trades or regret_events.
     pub fn fetch_recent_regret_scores(&self, limit: usize) -> Result<Vec<f64>, rusqlite::Error> {
         let conn = self.conn.lock().expect("lock");
         let mut stmt = conn.prepare(
@@ -564,7 +453,7 @@ impl EpisodeStore {
         rows.collect()
     }
 
-    /// Insert a new RuleSnapshot (for new version after adaptation).
+    /// Insert a new RuleSnapshot for versioning and rollback.
     pub fn insert_rule_snapshot(&self, snapshot: RuleSnapshot) -> Result<(), rusqlite::Error> {
         let conn = self.conn.lock().expect("lock");
         conn.execute(
@@ -618,14 +507,13 @@ impl EpisodeStore {
         Ok(())
     }
 
-    /// Bridge method used by OutcomeProcessor for the new ClosedEpisodeRecord flow.
-    /// In this skeleton we simply delegate to insert_closed_trade after mapping fields.
+    /// Bridge method used by OutcomeProcessor for the ClosedEpisodeRecord flow.
+    /// Maps ClosedEpisodeRecord fields to ClosedEpisode for persistence.
     pub fn close_episode(
         &self,
         record: &crate::outcome_processor::ClosedEpisodeRecord,
         _skill_predictions: &HashMap<String, f64>,
     ) -> Result<(), rusqlite::Error> {
-        // Map to the existing ClosedEpisode shape for persistence
         let ep = ClosedEpisode {
             id: record.episode_id.clone(),
             symbol: record.symbol.clone(),
@@ -647,9 +535,10 @@ impl EpisodeStore {
             session: "".into(),
             agent_reasoning: "".into(),
             consecutive_losses_at_entry: 0,
-            entry_time: record.entry_time.to_string(), // simplistic
+            entry_time: record.entry_time.to_string(),
             exit_time: record.exit_time.to_string(),
-            rule_version: 1, // caller can enrich with pre-trade rule_version if desired
+            rule_version: record.rule_version,
+            was_correct: record.was_correct,
         };
         self.insert_closed_trade(&ep)
     }
@@ -1085,5 +974,6 @@ fn row_to_episode(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClosedEpisode> {
         entry_time: row.get(20)?,
         exit_time: row.get(21)?,
         rule_version: row.get(22).unwrap_or(1),
+        was_correct: false, // populated by query-specific logic; default false
     })
 }

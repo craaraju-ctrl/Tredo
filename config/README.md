@@ -30,7 +30,15 @@ Or use the launcher script which handles this automatically:
 ./tredo tui
 ```
 
-## Environment Variables
+## Key Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_MODEL` | `nemotron-3-nano:4b` | Ollama model to use for inference |
+| `LLM_PROVIDER` | `ollama` | LLM provider (ollama, openai, anthropic, gemini) |
+| `LLM_ENDPOINT` | `http://localhost:11434` | LLM API endpoint |
+| `PORT` | `8080` | HTTP server port (TUI expects 8082) |
+| `PAPER_MODE` | `true` | Paper trading mode (always keep true until validated) |
 
 See [`tredo.env.example`](tredo.env.example) for the full list of variables with
 explanations, including LLM provider, exchange API keys, notification services,

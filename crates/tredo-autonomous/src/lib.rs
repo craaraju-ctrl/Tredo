@@ -29,7 +29,6 @@ pub mod types;
 pub mod weight_tuner; // AttributionEngine + symmetric reward/penalty weight evolution (Layer 4)
 pub mod walk_forward_runner; // Prevents parameter overfitting via train/test rolling windows before paper trading
 pub mod risk_guardian; // Risk parameters that can be evolved / rolled back by MetaControl
-pub mod outcome_processor; // Pre-trade snapshot + AttributionEngine backprop + regime-conditional MetaControl on close
 
 // === NEW SKILLS/TOOLS (research upgrades: sentiment, vol, regime for better MI/risk/strategies) ===
 pub mod correlation_checker;
@@ -41,6 +40,9 @@ pub mod regime_classifier; // Cognitive Core (Layer 2) — regime understanding 
 pub mod regime_detector; // kept for backward compat during migration
 pub mod sentiment_analyzer;
 pub mod volatility_calculator; // Full debate pipeline upgrade (aggregator + 4 agents powered by new skills)
+pub mod debate_orchestrator; // Multi-agent debate consensus engine
+pub mod execution_coordinator_fsm; // FSM-based execution coordinator with state machine
+pub mod skills; // Cognitive skill framework
 
 pub use backtester::{AutonomousBacktestResult, AutonomousBacktester};
 pub use orchestrator_struct::AutonomousOrchestrator;

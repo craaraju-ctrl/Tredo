@@ -182,6 +182,16 @@ cargo test -p tredo-core
 
 # Agent tests
 cargo test -p tredo-autonomous
+
+# Integration tests (13 tests covering all agent groups)
+cargo test -p tredo-autonomous --test tredo_integration
+```
+
+### All Tests
+
+```bash
+# Full workspace
+cargo test --workspace
 ```
 
 ### Real-Time Paper Validation
@@ -190,10 +200,12 @@ The project validates against live Binance data (not simulation):
 
 ```bash
 source config/tredo.env
-./tredo validate --extended --induce-regret
+PORT=8082 cargo run --bin tredo-orchestrator &
+cargo run --bin tredo-tui   # Open TUI to observe live
+curl -X POST http://localhost:8082/api/trigger_cycle -H "Content-Type: application/json" -d '{"symbol":"BTC"}'
 ```
 
-This runs the full autonomous system and measures self-evolution metrics.
+This runs the full autonomous system and produces 20+ COT entries across all 16 sub-agents.
 
 ---
 

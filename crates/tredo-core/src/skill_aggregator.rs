@@ -21,7 +21,7 @@
 use crate::agent::{AgentOutput, SkillDirection};
 
 /// Aggregated signal produced by combining multiple skill results.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AggregatedSignal {
     /// Net directional signal: -1.0 (strong bear) to +1.0 (strong bull).
     pub net_signal: f64,

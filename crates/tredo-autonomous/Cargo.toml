@@ -9,6 +9,10 @@ repository.workspace = true
 homepage.workspace = true
 readme.workspace = true
 
+[[bin]]
+name = "tredo-cli"
+path = "src/bin/tredo_cli.rs"
+
 [dependencies]
 tredo-core = { path = "../tredo-core" }
 async-trait = "0.1"

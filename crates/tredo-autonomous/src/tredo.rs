@@ -30,7 +30,7 @@
 use crate::types::{RiskAnalysis, TradeSignal};
 use std::error::Error;
 use std::sync::Arc;
-use tredo_core::Agent;
+use tredo_core::{Agent, TradeDirection};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // IDENTIFIER — scans the market and identifies potential opportunities
@@ -241,10 +241,14 @@ impl Tredo {
     /// Run the Identifier group: scans the market and identifies opportunities.
     /// Returns (discipline_ok, confluence, pivots) where discipline_ok indicates
     /// whether session timer and red folder checks passed.
+    ///
+    /// `chain_id` is the COT chain ID from the calling pipeline, used to link
+    /// per-sub-agent COT entries to the current pipeline run.
     pub async fn run_identifier(
         &self,
         symbol: &str,
         price: f64,
+        chain_id: u64,
     ) -> Result<(bool, f64, tredo_core::PivotLevels), Box<dyn Error + Send + Sync>> {
         println!(
             "[Tredo::Identifier] Scanning market for {} @ {:.2}",
@@ -252,7 +256,15 @@ impl Tredo {
         );
 
         // Run scanner
-        let _ = self.identifier.scanner.scan_watchlist().await?;
+        let scan_result = self.identifier.scanner.scan_watchlist().await;
+        let scan_count = scan_result.as_ref().map(|v| v.len()).unwrap_or(0);
+        self.identifier.scanner.state
+            .add_cot_step(chain_id, "WatchlistScannerAgent", "Scanning watchlist",
+                if scan_count > 0 { "SETUPS_FOUND" } else { "SCANNED" },
+                &format!("High-conviction setups: {}", scan_count),
+                if scan_count > 0 { 0.7 } else { 0.4 },
+                Some(symbol.to_string()),
+            ).await;
 
         // Run market intelligence
         let (confluence, pivots) = self
@@ -260,9 +272,17 @@ impl Tredo {
             .market_intel
             .analyze_market(symbol, price)
             .await?;
+        self.identifier.market_intel.state
+            .add_cot_step(chain_id, "MarketIntelligenceAgent", &format!("Market analysis for {} @ {:.2}", symbol, price),
+                "ANALYZED",
+                &format!("Confluence: {:.1}%, Pivot: {:.2}, R1: {:.2}, S1: {:.2}",
+                    confluence * 100.0, pivots.pivot, pivots.r1, pivots.s1),
+                confluence,
+                Some(symbol.to_string()),
+            ).await;
 
         // Run pivot calculator
-        let _ = self
+        let pivot_result = self
             .identifier
             .pivot_calc
             .run(Some(tredo_core::AgentInput::PivotRequest {
@@ -271,18 +291,54 @@ impl Tredo {
                 close: price,
             }))
             .await;
+        self.identifier.pivot_calc.state
+            .add_cot_step(chain_id, "PivotCalculatorAgent",
+                &format!("Calculating pivots for {} @ {:.2}", symbol, price),
+                if pivot_result.is_ok() { "CALCULATED" } else { "FAILED" },
+                &format!("High: {:.2}, Low: {:.2}, Close: {:.2}", price * 1.01, price * 0.99, price),
+                0.7,
+                Some(symbol.to_string()),
+            ).await;
 
         // Run confluence scorer
-        let _ = self.identifier.confluence.run(None).await;
+        let conf_result = self.identifier.confluence.run(None).await;
+        self.identifier.confluence.state
+            .add_cot_step(chain_id, "ConfluenceScorerAgent", "Scoring signal confluence",
+                if conf_result.is_ok() { "SCORED" } else { "FAILED" },
+                "Aggregating confluence from pivot proximity + trend alignment",
+                0.65,
+                Some(symbol.to_string()),
+            ).await;
 
         // Run pattern retriever
-        let _ = self.identifier.pattern_retriever.run(None).await?;
+        let pat_result = self.identifier.pattern_retriever.run(None).await;
+        self.identifier.pattern_retriever.state
+            .add_cot_step(chain_id, "PatternRetrieverAgent", "Retrieving historical patterns",
+                if pat_result.is_ok() { "RETRIEVED" } else { "FAILED" },
+                "Checked pattern database for similar historical setups",
+                0.5,
+                Some(symbol.to_string()),
+            ).await;
 
         // Run session timer (discipline: session check)
         let session_ok = self.identifier.session_timer.run(None).await.is_ok();
+        self.identifier.session_timer.state
+            .add_cot_step(chain_id, "SessionTimerAgent", "Checking trading session hours",
+                if session_ok { "PASS" } else { "FAIL" },
+                if session_ok { "Within allowed trading session" } else { "Outside market hours or in buffer period" },
+                if session_ok { 1.0 } else { 0.0 },
+                Some(symbol.to_string()),
+            ).await;
 
         // Run red folder checker (discipline: news events check)
         let red_ok = self.identifier.red_folder.run(None).await.is_ok();
+        self.identifier.red_folder.state
+            .add_cot_step(chain_id, "RedFolderCheckerAgent", "Checking high-impact events",
+                if red_ok { "PASS" } else { "BLOCKED" },
+                if red_ok { "No red folder events today" } else { "Red folder event — trading restricted" },
+                if red_ok { 1.0 } else { 0.0 },
+                Some(symbol.to_string()),
+            ).await;
 
         let discipline_ok = session_ok && red_ok;
         if !discipline_ok {
@@ -302,13 +358,17 @@ impl Tredo {
 
     // ── Verifier dispatch ──────────────────────────────────────────────────
     /// Run the Verifier group: validates risk & psychology.
-    /// Delegates to sub-agents: risk_calc -> risk_psych -> reflector.
+    /// Delegates to sub-agents: drawdown, overtrading, risk_psych, risk_calc, reflector.
     /// Note: drawdown and overtrading checks are now performed by the Guardian group.
+    ///
+    /// `chain_id` is the COT chain ID from the calling pipeline, used to link
+    /// per-sub-agent COT entries to the current pipeline run.
     pub async fn run_verifier(
         &self,
         symbol: &str,
         price: f64,
         equity: f64,
+        chain_id: u64,
     ) -> Result<RiskAnalysis, Box<dyn Error + Send + Sync>> {
         println!(
             "[Tredo::Verifier] Validating risk for {} @ {:.2} (equity: {:.2})",
@@ -320,7 +380,26 @@ impl Tredo {
             self.guardian.drawdown.run(None),
             self.guardian.overtrading.run(None),
         );
-        let discipline_ok = drawdown_res.is_ok() && overtrading_res.is_ok();
+        let drawdown_ok = drawdown_res.is_ok();
+        let overtrading_ok = overtrading_res.is_ok();
+
+        self.guardian.drawdown.state
+            .add_cot_step(chain_id, "DrawdownMonitorAgent", "Checking daily drawdown limits",
+                if drawdown_ok { "PASS" } else { "FAIL" },
+                if drawdown_ok { "Drawdown within safe limits" } else { "Max drawdown exceeded — halting" },
+                if drawdown_ok { 1.0 } else { 0.0 },
+                Some(symbol.to_string()),
+            ).await;
+
+        self.guardian.overtrading.state
+            .add_cot_step(chain_id, "OvertradingPreventerAgent", "Checking trade frequency",
+                if overtrading_ok { "PASS" } else { "BLOCKED" },
+                if overtrading_ok { "Trade frequency within limits" } else { "Overtrading detected — blocking new trades" },
+                if overtrading_ok { 1.0 } else { 0.0 },
+                Some(symbol.to_string()),
+            ).await;
+
+        let discipline_ok = drawdown_ok && overtrading_ok;
 
         if !discipline_ok {
             println!("[Tredo::Verifier] ⚠ Guardian discipline checks failed");
@@ -355,11 +434,39 @@ impl Tredo {
             })
             .await?;
 
+        self.verifier.risk_psych.state
+            .add_cot_step(chain_id, "RiskPsychologyAgent", "Analyzing risk & psychology",
+                "ANALYZED",
+                &format!("Heat: {:.1}%, DD: {:.1}%, Rec: {:?}, Traded today: {}",
+                    analysis.portfolio_heat * 100.0,
+                    analysis.daily_drawdown_pct * 100.0,
+                    analysis.recommendation,
+                    analysis.psychology_warnings.len()),
+                (1.0 - analysis.portfolio_heat).max(0.0),
+                Some(symbol.to_string()),
+            ).await;
+
         // Run risk calculator
-        let _ = self.verifier.risk_calc.run(None).await;
+        let risk_calc_result = self.verifier.risk_calc.run(None).await;
+        self.verifier.risk_calc.state
+            .add_cot_step(chain_id, "RiskCalculatorAgent", "Calculating position size & R:R",
+                if risk_calc_result.is_ok() { "CALCULATED" } else { "FAILED" },
+                &format!("Max position: ₹{:.2}, Max risk: {:.1}%",
+                    analysis.max_position_size,
+                    analysis.risk_per_trade_pct * 100.0),
+                0.75,
+                Some(symbol.to_string()),
+            ).await;
 
         // Run reflector
-        let _ = self.verifier.reflector.reflect(symbol).await;
+        let reflection = self.verifier.reflector.reflect(symbol).await;
+        self.verifier.reflector.state
+            .add_cot_step(chain_id, "ReflectorAgent", &format!("Reflecting on decisions for {}", symbol),
+                if reflection.is_ok() { "REFLECTED" } else { "FAILED" },
+                &reflection.as_deref().unwrap_or("Reflection failed"),
+                0.6,
+                Some(symbol.to_string()),
+            ).await;
 
         println!(
             "[Tredo::Verifier] ✅ Risk check — Recommendation: {:?}, Heat: {:.1}%",
@@ -376,23 +483,29 @@ impl Tredo {
     /// The agent (StrategyDecision) identifies direction + entry/SL/TP itself from indicators (RSI, MACD, patterns, volume, pivots, regime, etc.).
     /// No external price points or direction are provided — this is what makes it agentic AI, not a bot.
     /// Pure agentic entry point (no aggregated signal provided from caller).
+    /// Pure agentic entry point (no aggregated signal provided from caller).
+    /// Uses 0 as default chain_id (no COT linking).
     pub async fn run_executer(
         &self,
         symbol: &str,
         current_price: f64,
     ) -> Result<Option<TradeSignal>, Box<dyn Error + Send + Sync>> {
-        self.run_executer_with_aggregation(symbol, current_price, None)
+        self.run_executer_with_aggregation(symbol, current_price, None, 0)
             .await
     }
 
-    /// Agentic entry point that accepts the AggregatedSignal computed by MarketIntelligence.
+    /// Full agentic entry point that accepts the AggregatedSignal computed by MarketIntelligence.
     /// This is the correct pattern: skills are aggregated first, then the consensus is
     /// handed to the decision layer so the agent actually listens to its own thoughts.
+    ///
+    /// `chain_id` is the COT chain ID from the calling pipeline, used to link
+    /// per-sub-agent COT entries to the current pipeline run.
     pub async fn run_executer_with_aggregation(
         &self,
         symbol: &str,
         current_price: f64,
         aggregated_signal: Option<&tredo_core::AggregatedSignal>,
+        chain_id: u64,
     ) -> Result<Option<TradeSignal>, Box<dyn Error + Send + Sync>> {
         println!(
             "[Tredo::Executer] Agent making fully autonomous decision for {} @ current {:.2} (using aggregated skills consensus)",
@@ -418,17 +531,68 @@ impl Tredo {
                     sig.confidence_score * 100.0
                 );
 
+                self.executer.strategy.state
+                    .add_cot_step(chain_id, "StrategyDecisionAgent",
+                        &format!("Agentic decision for {} @ {:.2}", symbol, current_price),
+                        if sig.direction == TradeDirection::Long { "BUY" } else { "SELL" },
+                        &format!("Confidence: {:.1}%, Entry: {:.2}, SL: {:.2}, TP: {:.2}, R:R {:.1}:1",
+                            sig.confidence_score * 100.0,
+                            sig.entry_price,
+                            sig.stop_loss,
+                            sig.take_profit,
+                            sig.risk_reward_ratio),
+                        sig.confidence_score,
+                        Some(symbol.to_string()),
+                    ).await;
+
                 // Execute the trade (execute_paper_trade internally handles position management)
                 let exec_result = self.executer.execution.execute_paper_trade(sig).await?;
                 println!("[Tredo::Executer] ✅ {}", exec_result);
 
+                self.executer.portfolio.state
+                    .add_cot_step(chain_id, "PortfolioManagerAgent",
+                        &format!("Managing portfolio for {} trade", symbol),
+                        "MANAGED",
+                        &format!("Entry: {:.2}, Size: {:.0}, SL: {:.2}, TP: {:.2}",
+                            sig.entry_price, sig.position_size, sig.stop_loss, sig.take_profit),
+                        0.85,
+                        Some(symbol.to_string()),
+                    ).await;
+
+                self.executer.execution.state
+                    .add_cot_step(chain_id, "ExecutionCoordinatorAgent",
+                        &format!("Executing {} paper trade", symbol),
+                        "EXECUTED",
+                        &exec_result,
+                        sig.confidence_score,
+                        Some(symbol.to_string()),
+                    ).await;
+
                 // Log outcome via Guardian
                 let _ = self.guardian.outcome_logger.run(None).await;
+                self.guardian.outcome_logger.state
+                    .add_cot_step(chain_id, "OutcomeLoggerAgent", "Logging trade outcome",
+                        "LOGGED",
+                        &format!("Trade logged for {} {}", symbol,
+                            if sig.direction == TradeDirection::Long { "Long" } else { "Short" }),
+                        0.8,
+                        Some(symbol.to_string()),
+                    ).await;
 
                 Ok(Some(sig.clone()))
             }
             None => {
                 println!("[Tredo::Executer] Agent decided HOLD for {}", symbol);
+
+                self.executer.strategy.state
+                    .add_cot_step(chain_id, "StrategyDecisionAgent",
+                        &format!("Agentic decision for {} @ {:.2}", symbol, current_price),
+                        "HOLD",
+                        "LLM decided HOLD — confluence or confidence below threshold",
+                        0.0,
+                        Some(symbol.to_string()),
+                    ).await;
+
                 Ok(None)
             }
         }

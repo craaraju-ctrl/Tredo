@@ -1,4 +1,3 @@
-use crate::outcome_processor::OutcomeProcessor;
 use crate::state::SharedState;
 use crate::types::TradeSignal;
 use async_trait::async_trait;
@@ -262,10 +261,6 @@ impl ExecutionCoordinatorAgent {
                             &entry_time,
                         )
                         .await;
-                        // Feedback loop: score regret and persist to SQLite
-                        let op = OutcomeProcessor::new(self.state.clone());
-                        op.close_episode(pos, pos.stop_loss, "stop_loss", pnl).await;
-
                         // Auto-trigger deep reflection for self-evolution (trained memory + regret)
                         if let Ok(Some(json)) = self.state.memory.load_episode(&pos.symbol) {
                             if let Ok(episode) =
@@ -336,11 +331,6 @@ impl ExecutionCoordinatorAgent {
                             &entry_time,
                         )
                         .await;
-                        // Feedback loop: score regret and persist to SQLite
-                        let op = OutcomeProcessor::new(self.state.clone());
-                        op.close_episode(pos, pos.take_profit, "take_profit", pnl)
-                            .await;
-
                         // Auto-trigger deep reflection for self-evolution (trained memory + regret)
                         if let Ok(Some(json)) = self.state.memory.load_episode(&pos.symbol) {
                             if let Ok(episode) =

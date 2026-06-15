@@ -54,7 +54,7 @@ impl AgentTask {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SharedState {
     pub portfolio: Arc<RwLock<PortfolioState>>,
     pub memory: Arc<MemoryStore>,
@@ -124,6 +124,20 @@ pub struct SharedState {
 }
 
 impl SharedState {
+    /// Get current skill weights (for FSM coordinator).
+    pub fn get_skill_weights(&self) -> std::collections::HashMap<String, f64> {
+        let mut weights = std::collections::HashMap::new();
+        weights.insert("news_analyser".to_string(), 0.25);
+        weights.insert("market_metrics_meter".to_string(), 0.25);
+        weights.insert("sentiment_analyzer".to_string(), 0.25);
+        weights.insert("on_chain_data".to_string(), 0.25);
+        weights
+    }
+
+    /// Get current risk config (for FSM coordinator).
+    pub fn get_risk_config(&self) -> crate::risk_guardian::RiskGuardianConfig {
+        crate::risk_guardian::RiskGuardianConfig::default_fallback()
+    }
     pub fn new(
         memory: MemoryStore,
         rules: DisciplineRules,

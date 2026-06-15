@@ -5,6 +5,7 @@ const DECISIONS_TABLE: TableDefinition<&str, &str> = TableDefinition::new("decis
 const STATE_TABLE: TableDefinition<&str, &str> = TableDefinition::new("state");
 const EPISODES_TABLE: TableDefinition<&str, &str> = TableDefinition::new("episodes");
 
+#[derive(Debug)]
 pub struct MemoryStore {
     db: Database,
 }

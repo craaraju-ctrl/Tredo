@@ -175,7 +175,8 @@ This page is literally built to show the architecture we implemented.
   - **Historian** (Memory match + regret scoring) ← direct evidence of trained memory
 - **Guardian Group** — Drawdown, Overtrading, OutcomeLogger (episodes + regret).
 - **Reflection, Memory & Meta-Control** — Reflector, MetaControl (rule changes from high-regret), Episode Store + Vector Memory, Live Workflow COT.
-- **Complete Live Chain-of-Thought (Full Workflow Trace)** — Expandable tree of every step. This is where you will see the raw `StrongRules+Skills+TrainedMemory` entries, recall blocks, debate turns with memory snippets, rule adjustments, skill executions, etc.
+- **Complete Live Chain-of-Thought (Full Workflow Trace)** — Expandable tree of every step. This is where you will see the raw strong skills/rules/trained memory entries, recall blocks, debate turns with memory snippets, rule adjustments, skill executions, etc.
+- **Agent Tree View** (TUI) — Hierarchical tree showing all 16 sub-agents with color-coded action badges, skill score bars, direction icons, and reasoning sub-lines
 
 **How to debug here**:
 - Click around pages to trigger data.
