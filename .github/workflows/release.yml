@@ -17,8 +17,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check install.sh syntax
         run: bash -n install.sh
+      - name: Shellcheck install.sh
+        run: shellcheck install.sh
       - name: Check tredo launcher syntax
         run: bash -n tredo
+      - name: Shellcheck tredo
+        run: shellcheck tredo
 
   # ── Build Linux binaries ──────────────────────────────────────────
   build-linux:
