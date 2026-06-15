@@ -1,0 +1,159 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── Syntax check shell scripts before building ─────────────────────
+  syntax-check:
+    name: Script syntax check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check install.sh syntax
+        run: bash -n install.sh
+      - name: Check tredo launcher syntax
+        run: bash -n tredo
+
+  # ── Build Linux binaries ──────────────────────────────────────────
+  build-linux:
+    name: Build (Linux)
+    needs: syntax-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup set profile minimal
+          rustup toolchain install stable --component rustfmt --component clippy
+          rustup default stable
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-release-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-release-
+
+      - name: Build release binaries
+        run: cargo build --release -p tredo-orchestrator -p tredo-tui
+
+      - name: Stage artifacts
+        run: |
+          mkdir -p artifacts
+          cp target/release/tredo-orchestrator artifacts/
+          cp target/release/tredo-tui artifacts/
+          cp install.sh artifacts/
+          cp tredo artifacts/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tredo-linux
+          path: artifacts/
+
+  # ── Build macOS binaries ──────────────────────────────────────────
+  build-macos:
+    name: Build (macOS)
+    needs: syntax-check
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup set profile minimal
+          rustup toolchain install stable --component rustfmt --component clippy
+          rustup default stable
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-release-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-release-
+
+      - name: Build release binaries
+        run: cargo build --release -p tredo-orchestrator -p tredo-tui
+
+      - name: Stage artifacts
+        run: |
+          mkdir -p artifacts
+          cp target/release/tredo-orchestrator artifacts/
+          cp target/release/tredo-tui artifacts/
+          cp install.sh artifacts/
+          cp tredo artifacts/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tredo-macos
+          path: artifacts/
+
+  # ── Create GitHub Release with all artifacts ──────────────────────
+  release:
+    name: Create Release
+    needs: [build-linux, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: tredo-linux
+          path: artifacts/linux
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: tredo-macos
+          path: artifacts/macos
+
+      - name: Rename binaries with platform suffix
+        run: |
+          mv artifacts/linux/tredo-orchestrator artifacts/linux/tredo-orchestrator-x86_64-linux
+          mv artifacts/linux/tredo-tui artifacts/linux/tredo-tui-x86_64-linux
+          mv artifacts/macos/tredo-orchestrator artifacts/macos/tredo-orchestrator-aarch64-macos
+          mv artifacts/macos/tredo-tui artifacts/macos/tredo-tui-aarch64-macos
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body: |
+            ## tredo ${{ github.ref_name }}
+
+            See the [commit history](https://github.com/craaraju-ctrl/Tredo/compare/${{ github.ref_name }}) for detailed changes.
+
+            ### 📦 Downloads
+            - **Linux (x86_64)**: `tredo-orchestrator`, `tredo-tui`, `install.sh`, `tredo`
+            - **macOS (aarch64)**: `tredo-orchestrator`, `tredo-tui`, `install.sh`, `tredo`
+
+            ### 🚀 Quick Install
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/craaraju-ctrl/Tredo/${{ github.ref_name }}/install.sh | bash
+            ```
+          files: |
+            artifacts/linux/*
+            artifacts/macos/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
