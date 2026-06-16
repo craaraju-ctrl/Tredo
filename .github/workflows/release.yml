@@ -50,15 +50,15 @@ jobs:
             ${{ runner.os }}-release-
 
       - name: Build release binaries
-        run: cargo build --release -p tredo-orchestrator -p tredo-tui
+        run: cargo build --release -p tredo-runtime -p tredo-orchestrator -p tredo-tui
 
       - name: Stage artifacts
         run: |
           mkdir -p artifacts
+          cp target/release/tredo artifacts/
           cp target/release/tredo-orchestrator artifacts/
           cp target/release/tredo-tui artifacts/
           cp install.sh artifacts/
-          cp tredo artifacts/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -92,15 +92,15 @@ jobs:
             ${{ runner.os }}-release-
 
       - name: Build release binaries
-        run: cargo build --release -p tredo-orchestrator -p tredo-tui
+        run: cargo build --release -p tredo-runtime -p tredo-orchestrator -p tredo-tui
 
       - name: Stage artifacts
         run: |
           mkdir -p artifacts
+          cp target/release/tredo artifacts/
           cp target/release/tredo-orchestrator artifacts/
           cp target/release/tredo-tui artifacts/
           cp install.sh artifacts/
-          cp tredo artifacts/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -132,8 +132,10 @@ jobs:
 
       - name: Rename binaries with platform suffix
         run: |
+          mv artifacts/linux/tredo artifacts/linux/tredo-x86_64-linux
           mv artifacts/linux/tredo-orchestrator artifacts/linux/tredo-orchestrator-x86_64-linux
           mv artifacts/linux/tredo-tui artifacts/linux/tredo-tui-x86_64-linux
+          mv artifacts/macos/tredo artifacts/macos/tredo-aarch64-macos
           mv artifacts/macos/tredo-orchestrator artifacts/macos/tredo-orchestrator-aarch64-macos
           mv artifacts/macos/tredo-tui artifacts/macos/tredo-tui-aarch64-macos
 
@@ -147,8 +149,8 @@ jobs:
             See the [commit history](https://github.com/craaraju-ctrl/Tredo/compare/${{ github.ref_name }}) for detailed changes.
 
             ### 📦 Downloads
-            - **Linux (x86_64)**: `tredo-orchestrator`, `tredo-tui`, `install.sh`, `tredo`
-            - **macOS (aarch64)**: `tredo-orchestrator`, `tredo-tui`, `install.sh`, `tredo`
+            - **Linux (x86_64)**: `tredo`, `tredo-orchestrator`, `tredo-tui`, `install.sh`
+            - **macOS (aarch64)**: `tredo`, `tredo-orchestrator`, `tredo-tui`, `install.sh`
 
             ### 🚀 Quick Install
             ```bash

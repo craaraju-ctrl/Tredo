@@ -9,11 +9,12 @@ This document provides guidelines for setting up a development environment, codi
 ## Table of Contents
 
 1. [Development Setup](#development-setup)
-2. [Project Architecture](#project-architecture)
-3. [Coding Conventions](#coding-conventions)
-4. [Quality Gates](#quality-gates)
-5. [Pull Request Process](#pull-request-process)
-6. [Testing](#testing)
+2. [Branching Strategy](#branching-strategy)
+3. [Project Architecture](#project-architecture)
+4. [Coding Conventions](#coding-conventions)
+5. [Quality Gates](#quality-gates)
+6. [Pull Request Process](#pull-request-process)
+7. [Testing](#testing)
 
 ---
 
@@ -48,6 +49,76 @@ Copy `config/tredo.env.example` to `config/tredo.env` and edit as needed. Source
 
 ```bash
 source config/tredo.env
+```
+
+---
+
+## Branching Strategy
+
+We use a **Git Flow-inspired** branching model adapted for a fast-moving Rust project.
+
+```
+main          ──── stable, production-ready, tagged releases
+    ↑
+develop       ──── integration branch; all features merge here first
+    ↑
+feat/*        ──── individual feature branches (from develop)
+fix/*         ──── bug fix branches (from develop or main)
+docs/*        ──── documentation-only changes
+refactor/*    ──── structural refactors with no behaviour change
+release/*     ──── release preparation (from develop or main)
+hotfix/*      ──── emergency fixes (from main)
+```
+
+### Branch Rules
+
+| Branch | Purpose | Merge Target | CI Required |
+|--------|---------|-------------|-------------|
+| `main` | Stable production code | — | ✅ Full gate |
+| `develop` | Integration / next release | `main` | ✅ Full gate |
+| `feat/*` | New features | `develop` | ✅ Full gate |
+| `fix/*` | Bug fixes | `develop` (or `main` for hotfixes) | ✅ Full gate |
+| `docs/*` | Documentation only | `develop` | ✅ Format + build |
+| `refactor/*` | Code restructuring | `develop` | ✅ Full gate |
+| `release/*` | Release prep / version bump | `main` | ✅ Full gate + release build |
+| `hotfix/*` | Critical production fixes | `main` + `develop` | ✅ Full gate |
+
+### Creating a Feature Branch
+
+```bash
+# Always branch from develop (unless it's a hotfix)
+git checkout develop
+git pull origin develop
+git checkout -b feat/my-new-feature
+
+# Work, commit, push
+git push -u origin feat/my-new-feature
+# Then open a PR against develop
+```
+
+### Release Branches
+
+When `develop` is ready for release:
+
+```bash
+git checkout develop
+git pull origin develop
+git checkout -b release/v0.3.0
+# Version bump, final changelog, release notes
+git push -u origin release/v0.3.0
+# Open PR → main
+```
+
+### Hotfix Branches
+
+For critical bugs in production:
+
+```bash
+git checkout main
+git pull origin main
+git checkout -b hotfix/critical-fix
+# Fix, commit, PR → main
+# After merge: also cherry-pick or merge into develop
 ```
 
 ---
@@ -159,23 +230,35 @@ in the [Actions tab](https://github.com/craaraju-ctrl/Tredo/actions).
 
 ## Pull Request Process
 
-1. **Branch** — Create a feature branch from `main`:
+1. **Branch** — Create a feature branch from `develop` (or `main` for hotfixes):
    ```bash
+   git checkout develop
+   git pull origin develop
    git checkout -b feat/my-feature
    ```
 
-2. **Commit** — Use descriptive commit messages:
+2. **Commit** — Use descriptive commit messages following [Conventional Commits](https://www.conventionalcommits.org/):
    - `feat: ...` for new features
    - `fix: ...` for bug fixes
    - `refactor: ...` for code improvements
    - `docs: ...` for documentation
    - `chore: ...` for maintenance
+   - `test: ...` for test-only changes
+   - `ci: ...` for CI/CD changes
+   - `perf: ...` for performance improvements
 
 3. **Run quality gates** — Ensure all checks pass locally (see [Quality Gates](#quality-gates))
 
-4. **Open a PR** — Against `main` with a clear description of the changes
+4. **Open a PR** — Against `develop` with a clear description of the changes:
+   - Title: `feat: add unified runtime engine` or `fix: resolve memory leak in vector store`
+   - Description: What changed, why, and how it was tested
+   - Link any related issues
 
-5. **CI must pass** — The GitHub Actions pipeline must be green before merge
+5. **Code review** — At least one approving review required before merge
+
+6. **CI must pass** — The GitHub Actions pipeline must be green before merge
+
+7. **Merge** — Use **squash and merge** for feature branches to keep `develop` history clean. Use **merge commit** for release branches to preserve branch topology.
 
 ---
 

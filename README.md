@@ -10,11 +10,12 @@ tredo combines a rigorous **Disciplined Core** (professional trading rules enfor
 - **Unified runtime** (`tredo-runtime`) — event-driven, multi-mode (paper / live / backtest / validate / research), with a world model, policy cache, active learner, and broker plugin system.
 - **Production broker adapters** — Alpaca (US equities/crypto) and Zerodha Kite Connect (India) with real API integration.
 
-[![CI](https://github.com/craaraju-ctrl/Tredo/actions/workflows/ci.yml/badge.svg)](https://github.com/craaraju-ctrl/Tredo/actions/workflows/ci.yml)
+[![CI](https://github.com/craaraju-ctrl/Tredo/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/craaraju-ctrl/Tredo/actions/workflows/ci.yml)
 [![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange?logo=rust)](https://www.rust-lang.org)
 [![Tokio](https://img.shields.io/badge/Async-Tokio-red?logo=Tokio)](https://tokio.rs)
 [![Tauri](https://img.shields.io/badge/UI-Tauri-ffc131?logo=tauri)](https://tauri.app)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
+[![Branches](https://img.shields.io/badge/branching-gitflow-success)](https://github.com/craaraju-ctrl/Tredo/blob/main/CONTRIBUTING.md#branching-strategy)
 
 **Fresh TREDO repository** — complete rebrand and cleanup. All previous TREDO-era data, GitHub workflows, build artifacts, and historical databases have been removed for a clean starting point.
 
