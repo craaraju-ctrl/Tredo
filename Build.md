@@ -54,7 +54,7 @@ Paper trading and rigorous real-time validation remain the default until the sel
 - Extract clean traits (MemoryBackend, DebateCoordinator, RuleEngine, ExecutionBackend) so the system becomes a reusable "disciplined agentic trading runtime" crate.
 - Complete realistic execution layer in pure Rust (paper with LOB simulation first, then broker adapters).
 - Close the self-evolution loop fully in Rust (automatic outcome → reflection → procedural memory/rule updates → observable adaptation).
-- Unify/remove duplication (deprecate tredo-agents cleanly).
+- Unify/remove duplication (tredo-agents removed from workspace).
 - Pure-Rust structured logging + optional OTEL.
 
 **Justified Non-Rust (keep minimal):**
@@ -125,11 +125,14 @@ ls -l target/release/tredo-tui target/release/tredo-orchestrator
 **Current workspace members (from Cargo.toml):**
 - tredo-core (foundation — keep pure Rust, evolve here first)
 - tredo-autonomous (agents, debate, state, reflection, meta — Rust priority #1)
-- tredo-orchestrator (temporal loops)
+- tredo-orchestrator (temporal loops + HTTP/WS API)
 - tredo-tui (primary UI)
-- tredo-server (light HTTP exposure)
+- tredo-server (production HTTP server with broker registry)
+- tredo-runtime (NEW: unified event-driven runtime engine, multi-mode, world model, policy cache, broker plugins)
+- tredo-broker-alpaca (NEW: Alpaca Markets API v2 adapter — US equities + crypto)
+- tredo-broker-zerodha (NEW: Zerodha Kite Connect v3 adapter — India equities + derivatives)
 - src-tauri (secondary desktop — acceptable non-core)
-- tredo-agents (deprecated shim — plan to remove or thin to re-exports only)
+- tredo-agents (deprecated shim — removed from workspace)
 
 **Validation after build:**
 ```bash
@@ -168,7 +171,24 @@ The Rust side (`tredo-core/src/kronos_client.rs`) already handles unavailability
 
 After building + starting Kronos + Ollama:
 
-**Recommended (launcher script is already present and good):**
+**Recommended (unified CLI — new in this evolution):**
+```bash
+tredo --mode paper              # starts the unified runtime in paper mode
+# or after release build:
+./target/release/tredo --mode paper
+
+# Validate mode with live paper crypto
+./target/release/tredo --mode validate --cycles 100 --induce-regret
+
+# Backtest mode
+./target/release/tredo --mode backtest --data ./btc_2024.csv --capital 100000
+
+# Broker configuration
+./target/release/tredo configure alpaca
+./target/release/tredo configure zerodha
+```
+
+**Legacy (launcher script and direct cargo — still works):**
 ```bash
 ./tredo tui          # primary beautiful ratatui experience
 # or
@@ -178,6 +198,8 @@ cargo run -p tredo-tui
 **Backend only (for Tauri or API-driven use):**
 ```bash
 cargo run -p tredo-orchestrator
+# or via runtime:
+cargo run -p tredo-runtime -- --mode paper
 ```
 
 **With the launcher wizard (recommended first time):**
@@ -189,10 +211,12 @@ source config/tredo.env
 
 **What a working run looks like (paper):**
 - Fast loop: price updates, SL/TP monitoring.
-- Medium loop: MarketIntelligence (pivots, confluence, patterns, Kronos forecast) → debate (when complete) → StrategyDecision (after DisciplinedCore gate + memory recall) → risk/psych validation → paper execution → episode stored.
+- Medium loop: MarketIntelligence (pivots, confluence, patterns, Kronos forecast) → debate (when complete) → StrategyDecision (after DisciplinedCore gate + memory recall + policy cache check) → risk/psych validation → paper execution → episode stored.
 - Slow loop: load recent episodes → deep reflection (regret + lessons) → MetaControl reviews high-regret items and can propose rule updates.
-- TUI shows rich COT tree with skills/rules/trained-memory tags, hierarchical Agent Tree with colored action badges and skill score bars.
+- TUI shows rich COT tree with skills/rules/trained-memory/policy tags, hierarchical Agent Tree with colored action badges and skill score bars.
 - redb + history db grow with real episodes.
+- Policy Cache learns from outcomes and reduces future LLM calls.
+- World Model updates beliefs about symbols and correlations.
 
 Always keep `PAPER_MODE=true` until the full self-evolution loop (reflection → adaptation → measurable improvement) has been validated for a long time.
 
@@ -229,12 +253,12 @@ Only touch the kronos_service when you are deliberately working on the forecast 
 ## 7. Production & Packaging (Rust Binaries)
 
 **Docker (Rust-focused):**
-Use multi-stage with `cargo build --release -p tredo-tui -p tredo-orchestrator`.
+Use multi-stage with `cargo build --release -p tredo-runtime -p tredo-tui -p tredo-orchestrator -p tredo-broker-alpaca -p tredo-broker-zerodha`.
 
-Runtime image only needs the two Rust binaries + (optionally) the kronos_service as a sidecar or external service.
+Runtime image only needs the runtime binary + TUI + (optionally) the kronos_service as a sidecar or external service.
 
 **Recommended production stack (Rust heavy):**
-- Rust binaries for orchestrator + TUI (or headless mode).
+- Rust binaries for runtime + TUI + broker adapters (or headless mode).
 - Ollama (can be remote).
 - Kronos (the one justified Python service, or future pure-Rust replacement).
 - Optional agentmemory service.
@@ -248,25 +272,27 @@ Hard `PAPER_MODE` enforcement until you have extensive validated self-evolving p
 
 | Area                    | Current State                  | Rust Priority Action                          | Other Lang Justification          | Priority |
 |-------------------------|--------------------------------|-----------------------------------------------|-----------------------------------|----------|
+| Unified Runtime         | New `tredo-runtime` with event bus, world model, policy cache, active learner, introspector | Harden + expand world model accuracy + policy cache hit rate | None                              | High     |
 | Rules & Discipline      | Excellent (DisciplinedCore)    | Keep + enhance with more memory-adjusted rules | None                              | High     |
 | Skills / "How"          | Good trait (`AgentSkill`)      | Expand library of pure-Rust skills            | None                              | High     |
 | Memory (redb + vector)  | redb solid, vector prototype + JSON fallback; Lance feature present | Full LanceDB integration (resolve arrow pins, migrate VectorMemory to tables with filters + embeddings from Ollama) | None                              | High     |
 | Debate & Synthesis      | Mostly complete (4-role + aggregator + recall wired & validated in real paper crypto) | Robustness, more skill injection, end-to-end metrics | None (port any prototype)         | Medium (post-validation) |
 | Reflection + Meta       | Core loop complete & validated | Extended runs for observable compounding (regret trends, rule drift over 50+ episodes); meta on skills | None                        | High     |
-| Execution (paper/live)  | Working paper sim + rich core PaperEngine | Realistic LOB-based paper (depth from WS + book matching + variable slippage); Binance (crypto) broker adapter (gated) | None                     | High     |
+| Execution (paper/live)  | Working paper sim + rich core PaperEngine + real broker adapters (Alpaca, Zerodha) | Realistic LOB-based paper (depth from WS + book matching + variable slippage); extend broker adapters | None                     | High     |
+| Broker Adapters         | Alpaca + Zerodha implemented, paper + live paths | Test live paths with tiny capital, extend to more brokers (IBKR, CCXT) | None                              | High     |
 | Temporal Orchestrator   | Good                           | Harden + add OTEL spans (Rust)                | None                              | Medium   |
 | TUI                     | Excellent (ratatui)            | Continue as primary                           | None                              | High     |
 | Forecast (Kronos)       | Python sidecar                 | Keep client + fallback; replace model later if desired | Mature HF Chronos-Bolt ecosystem | Low (justified gap) |
 | Desktop UI (Tauri)      | Secondary                      | Keep minimal JS layer if you want a GUI       | Webview convenience               | Low      |
 | Data feeds              | Mixed (Binance WS, Yahoo)      | Consolidate pure-Rust clients                 | None                              | Medium   |
 
-**Recommended order for "intact" system (updated post 2026-06-14 validation + skills work):**
+**Recommended order for "intact" system (updated post 2026-06-14 validation + skills work + runtime evolution):**
 1. Extended self-evolution validation (long real paper crypto runs + induced regret to demonstrate compounding — see research/remaining...md).
-2. Realistic paper execution (LOB) + broker adapters (crypto/Binance first).
+2. Realistic paper execution (LOB) + broker adapter live testing (Alpaca paper first, then tiny live).
 3. Full LanceDB (production memory for recall).
 4. Richer AgentSkill outputs + meta adaptation of skills.
 5. Real WS feeds (Binance depth for better MI/paper).
-6. Finish/robustness on debate + clean duplication (tredo-agents).
+6. Finish/robustness on debate + runtime hardening.
 7. Production hardening (Docker, OTEL, launcher polish, watchlist consistency).
 8. (Optional) More skills + replace Kronos.
 
@@ -277,11 +303,18 @@ See full research blueprint for implementation/validation/build details on each 
 ## 9. Quick Commands (Rust-First)
 
 ```bash
-# Build everything Rust
+# Build everything Rust (including new runtime and broker crates)
 cargo build --workspace --release
 
-# Primary interface
+# Primary interface (legacy launcher — still works)
 ./tredo tui
+
+# Unified CLI (new — recommended)
+./target/release/tredo --mode paper
+./target/release/tredo --mode validate --cycles 100 --induce-regret
+./target/release/tredo --mode backtest --data ./btc_2024.csv --capital 100000
+./target/release/tredo configure alpaca
+./target/release/tredo configure zerodha
 
 # Services (only the justified gap)
 cd kronos_service && uvicorn main:app --port 8000
@@ -367,7 +400,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - Correlation still a smart proxy (not full rolling Pearson on aligned series) — acceptable for paper; easy to harden with more history.
 - Self-evolution currently targets **rules** (MetaControl mutates max_risk etc. on regret). Skills are static "tools". Future: meta could propose small param tweaks (vol expansion threshold, onchain weights) persisted in state or rules.
 - Not every helper went through the trait originally (pragmatic during development). Now all the "new" MI/debate skills do.
-- Duplication: tredo-agents (deprecated) has some overlapping pattern/pivot/confluence subs.
+- Duplication: tredo-agents (removed from workspace) had some overlapping pattern/pivot/confluence subs.
 - LLM 405 / endpoint quirks can cause debate → LLM fallback (environment, not skills bug; debate still runs first).
 
 **How skills participate in the closed self-evolving loop (now validated):**

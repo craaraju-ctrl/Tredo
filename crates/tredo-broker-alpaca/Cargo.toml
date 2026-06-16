@@ -1,0 +1,21 @@
+[package]
+name = "tredo-broker-alpaca"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Alpaca Markets API v2 broker adapter for TREDO — US equities/crypto trading via Alpaca (supports paper trading)"
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+
+[dependencies]
+tredo-core = { path = "../tredo-core" }
+async-trait = "0.1"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { workspace = true }
+reqwest = { version = "0.11", features = ["json"] }
+tracing = "0.1"
+thiserror = "1.0"

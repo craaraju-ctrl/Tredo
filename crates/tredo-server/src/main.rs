@@ -40,6 +40,7 @@ use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 use tredo_core::paper_engine::*;
 use tredo_core::TradeDirection;
+use tredo_runtime::broker::{BrokerConfig, BrokerPluginManager};
 
 // ── Application State ────────────────────────────────────────────────────────
 
@@ -125,11 +126,29 @@ struct ModeRequest {
 
 #[derive(Deserialize)]
 struct BrokerConfigRequest {
+    /// Broker plugin ID: "zerodha", "alpaca", etc.
     broker: String,
-    api_key: String,
-    api_secret: String,
+    /// API key (maps to broker-specific config key)
+    #[serde(default)]
+    api_key_id: Option<String>,
+    /// API secret (maps to broker-specific config key)
+    #[serde(default)]
+    api_secret_key: Option<String>,
+    /// Legacy alias for api_key_id
+    #[serde(default)]
+    api_key: Option<String>,
+    /// Legacy alias for api_secret_key
+    #[serde(default)]
+    api_secret: Option<String>,
+    /// Broker-specific base URL (optional, uses default)
+    #[serde(default)]
     base_url: Option<String>,
+    /// Paper mode flag (Alpaca-specific: defaults to true for safety)
+    #[serde(default = "default_paper")]
+    paper: bool,
 }
+
+fn default_paper() -> bool { true }
 
 // ── Routes ───────────────────────────────────────────────────────────────────
 
@@ -287,27 +306,56 @@ async fn handle_broker_config(
     State(state): State<Arc<AppState>>,
     Json(req): Json<BrokerConfigRequest>,
 ) -> Json<ApiResponse<String>> {
-    match req.broker.to_lowercase().as_str() {
-        "zerodha" | "kite" => {
-            let base_url = req
-                .base_url
-                .unwrap_or_else(|| "https://api.kite.trade".to_string());
-            let broker = Arc::new(ZerodhaKiteBroker::new(
-                &req.api_key,
-                &req.api_secret,
-                &base_url,
-            ));
-            state.registry.register_live_broker(broker).await;
-            Json(ApiResponse::ok(
-                "Zerodha Kite broker registered".to_string(),
-            ))
+    // Build the BrokerConfig from the request, mapping legacy field names
+    let mut config = BrokerConfig::default();
+
+    // Primary field names (api_key_id, api_secret_key) take precedence over legacy (api_key, api_secret)
+    let api_key = req.api_key_id.or(req.api_key);
+    let api_secret = req.api_secret_key.or(req.api_secret);
+
+    if let Some(ref k) = api_key {
+        config.set("api_key_id", k);
+        // Also set for brokers that use "api_key" as their config key (e.g., zerodha)
+        config.set("api_key", k);
+    }
+    if let Some(ref s) = api_secret {
+        config.set("api_secret_key", s);
+        config.set("api_secret", s);
+    }
+    if let Some(ref url) = req.base_url {
+        config.set("base_url", url);
+    }
+    config.set("paper", if req.paper { "true" } else { "false" });
+
+    // Discover plugins and instantiate the requested broker
+    let plugin_mgr = BrokerPluginManager::new();
+    match plugin_mgr.instantiate(&req.broker, &config).await {
+        Ok(handle) => {
+            // Register with the broker registry and switch to live mode
+            let adapter = handle.adapter;
+            state
+                .registry
+                .register_live_broker(Arc::from(adapter))
+                .await;
+
+            match state.registry.set_mode(TradingMode::Live).await {
+                Ok(()) => {
+                    let broker_name = state.registry.current_broker_name().await;
+                    Json(ApiResponse::ok(format!(
+                        "✓ {} connected and set as active broker",
+                        broker_name
+                    )))
+                }
+                Err(e) => ApiResponse::err(&format!(
+                    "Broker connected but failed to switch mode: {}",
+                    e
+                )),
+            }
         }
-        "angel" => {
-            let broker = Arc::new(AngelOneBroker::new(&req.api_key, &req.api_secret));
-            state.registry.register_live_broker(broker).await;
-            Json(ApiResponse::ok("Angel One broker registered".to_string()))
-        }
-        _ => ApiResponse::err(&format!("Unknown broker: {}", req.broker)),
+        Err(e) => ApiResponse::err(&format!(
+            "Failed to configure broker '{}': {}",
+            req.broker, e
+        )),
     }
 }
 

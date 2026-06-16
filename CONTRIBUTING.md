@@ -38,7 +38,7 @@ cd Tredo
 # Copy environment template
 cp config/tredo.env.example config/tredo.env
 
-# Build the workspace
+# Build the workspace (including new runtime and broker crates)
 cargo build --workspace
 ```
 
@@ -58,11 +58,14 @@ tredo is a **Rust-first** workspace organised into these crates:
 
 | Crate | Purpose |
 |-------|---------|
-| `tredo-core` | Foundation: DisciplinedCore rules, memory (redb), LLM client, AgentSkill trait, paper engine |
-| `tredo-autonomous` | Agent hierarchy, debate, skills implementations, reflection, meta-control, state |
+| `tredo-core` | Foundation: DisciplinedCore rules, memory (redb), LLM client, AgentSkill trait, paper engine, BrokerAdapter trait, backtest engine |
+| `tredo-autonomous` | Agent hierarchy, debate, skills implementations, reflection, meta-control, state, pipeline, new: DebateOrchestrator, OutcomeProcessor, RegimeClassifier |
 | `tredo-orchestrator` | Temporal loops (fast/medium/slow), HTTP/WS API server |
-| `tredo-tui` | Primary Terminal UI (ratatui) — COT tree, portfolio, agent views |
-| `tredo-server` | Optional production HTTP server |
+| `tredo-tui` | Primary Terminal UI (ratatui) — COT tree, portfolio, agent views, policy cache, backtest, health, performance |
+| `tredo-server` | Production HTTP server (Axum + broker registry + paper/live mode switching) |
+| `tredo-runtime` | **Unified runtime engine** — event-driven, multi-mode (paper/live/backtest/validate/research), world model, policy cache, active learner, broker plugin system, introspector |
+| `tredo-broker-alpaca` | Alpaca Markets API v2 broker adapter (US equities + crypto, paper + live) |
+| `tredo-broker-zerodha` | Zerodha Kite Connect v3 broker adapter (India equities + derivatives) |
 | `src-tauri` | Secondary desktop UI (Tauri + vanilla JS) |
 
 **External services** (run separately):
@@ -78,7 +81,8 @@ Rules + Memory > Pure Prompting
 - **Rules** (DisciplinedCore) = hard non-negotiable trading gates in Rust
 - **Skills** (AgentSkill trait) = pluggable deterministic capabilities
 - **Trained Memory** = vector RAG + episode store for past outcomes
-- **LLM** = used sparingly, only after debate + rules + memory gates
+- **Policy Cache** = learned (features → action → outcome) lookup table that short-circuits debate
+- **LLM** = used sparingly, only after debate + rules + memory + cache gates
 
 ---
 
@@ -109,6 +113,7 @@ New agent capabilities should follow the existing patterns:
 - **Main agents** — orchestrate sub-agents, may use LLM for synthesis
 - **Skills** — implement the `AgentSkill` trait from `tredo-core/src/skills.rs`
 - **Debate roles** — extend the debate system in `tredo-autonomous/src/debate.rs`
+- **Runtime modules** — add to `tredo-runtime/src/` with proper event bus integration
 
 ### Memory
 
@@ -116,6 +121,7 @@ New agent capabilities should follow the existing patterns:
 - Use SQLite (`episode_store`) for persistent episode journal
 - Use vector memory (`VectorMemory`) for semantic recall of past episodes
 - Use `agentmemory` client for cross-session long-term intelligence
+- Use `PolicyCache` (in `tredo-runtime`) for learned trading memory
 
 ---
 
@@ -147,6 +153,7 @@ in the [Actions tab](https://github.com/craaraju-ctrl/Tredo/actions).
 | Rust checks | `fmt` → `clippy` → `test` → `build --release` |
 | Tauri | Checks `tredo-tauri` crate compiles with GTK deps |
 | Kronos | Validates Python service syntax |
+| Broker adapters | Tests `tredo-broker-alpaca` and `tredo-broker-zerodha` in paper mode |
 
 ---
 
@@ -183,6 +190,12 @@ cargo test -p tredo-core
 # Agent tests
 cargo test -p tredo-autonomous
 
+# Runtime tests
+cargo test -p tredo-runtime
+
+# Broker adapter tests (paper mode)
+cargo test -p tredo-broker-alpaca -p tredo-broker-zerodha
+
 # Integration tests (13 tests covering all agent groups)
 cargo test -p tredo-autonomous --test tredo_integration
 ```
@@ -199,13 +212,17 @@ cargo test --workspace
 The project validates against live Binance data (not simulation):
 
 ```bash
+# Via the new unified CLI
+cargo run -p tredo-runtime -- --mode validate --cycles 50
+
+# Or via legacy launcher
 source config/tredo.env
-PORT=8082 cargo run --bin tredo-orchestrator &
-cargo run --bin tredo-tui   # Open TUI to observe live
+PORT=8082 cargo run -p tredo-orchestrator &
+cargo run -p tredo-tui   # Open TUI to observe live
 curl -X POST http://localhost:8082/api/trigger_cycle -H "Content-Type: application/json" -d '{"symbol":"BTC"}'
 ```
 
-This runs the full autonomous system and produces 20+ COT entries across all 16 sub-agents.
+This runs the full autonomous system and produces 20+ COT entries across all sub-agents.
 
 ---
 

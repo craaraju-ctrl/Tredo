@@ -286,14 +286,43 @@ impl StrategyDecisionAgent {
             vector_context
         );
 
-        // Final signal with self-identified levels
+        // === REAL POSITION SIZING (was 0.0, now uses calculate_position_size from helpers) ===
+        let equity = {
+            let portfolio = self.state.portfolio.read().await;
+            portfolio.cash_balance
+                + portfolio
+                    .open_positions
+                    .iter()
+                    .map(|p| p.current_price * p.quantity)
+                    .sum::<f64>()
+        };
+        let position_size = crate::helpers::calculate_position_size(
+            equity,
+            rules.max_risk_per_trade,
+            entry,
+            stop_loss,
+        );
+
+        // Validate the calculated size against remaining cash
+        let position_value = position_size * entry;
+        let cash_available = {
+            let portfolio = self.state.portfolio.read().await;
+            portfolio.cash_balance
+        };
+        let final_position_size = if position_value > cash_available * 0.95 {
+            // Cap to 95% of available cash
+            (cash_available * 0.95) / entry.max(0.0001)
+        } else {
+            position_size
+        };
+
         let signal = TradeSignal {
             symbol: symbol.to_string(),
             direction,
             entry_price: entry,
             stop_loss,
             take_profit,
-            position_size: 0.0, // will be sized by portfolio_manager using rules
+            position_size: final_position_size,
             confidence_score: debate_conf.min(0.95),
             confluence_score: confluence,
             risk_reward_ratio,

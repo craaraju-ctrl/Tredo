@@ -2,22 +2,18 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 import pandas as pd
-from model import Kronos, KronosTokenizer, KronosPredictor
+from model import KronosPredictor
 import uvicorn
 import os
 
 app = FastAPI(title="Kronos Forecasting Service for tredo", version="0.1.0")
 
 # === Model Loading ===
-# Set KRONOS_MODEL_PATH and KRONOS_TOKENIZER_PATH env vars to use local downloaded models
+# Set KRONOS_MODEL_PATH env var to use a local downloaded model
 # Otherwise falls back to Hugging Face (first run will download)
-MODEL_PATH = os.getenv("KRONOS_MODEL_PATH", "amazon/chronos-bolt-base")
-TOKENIZER_PATH = os.getenv("KRONOS_TOKENIZER_PATH", "NeoQuasar/Kronos-Tokenizer-base")
 
 print("[KronosService] Loading Kronos model...")
-tokenizer = KronosTokenizer.from_pretrained(TOKENIZER_PATH)
-model = Kronos.from_pretrained(MODEL_PATH)
-predictor = KronosPredictor(model, tokenizer)
+predictor = KronosPredictor()
 print("[KronosService] Kronos model loaded successfully and ready.")
 
 class OhlcvBar(BaseModel):

@@ -6,7 +6,7 @@ The primary Terminal UI for tredo — built with [ratatui](https://ratatui.rs/).
 
 - **Chain-of-Thought Log** — Real-time scrollable log of every agent decision, color-coded by agent group
 - **Portfolio Dashboard** — Current positions, P&L, equity, cash, win rate
-- **Agent & Sub-Agent Tree** — Hierarchical tree view of all 16 sub-agents across 4 groups (Identifier, Verifier, Executer, Guardian) with:
+- **Agent & Sub-Agent Tree** — Hierarchical tree view of all sub-agents across 4 groups (Identifier, Verifier, Executer, Guardian) with:
   - Color-coded action badges per agent (🟢 PASS, 🔴 FAIL/HALT, 🟡 HOLD/SKIP, 🔵 START/UPDATED)
   - Skill score bars with direction icons (▲ Bullish, ▼ Bearish, ◆ Neutral) and confidence %
   - Live reasoning sub-lines for leaf agents
@@ -16,6 +16,13 @@ The primary Terminal UI for tredo — built with [ratatui](https://ratatui.rs/).
 - **Rules View** — Active `DisciplinedCore` rules with memory-adjusted values
 - **Model Selection** — Browse and switch Ollama models interactively
 - **Watchlist** — Live monitored symbols
+- **Backtest View** — Run and view backtest results with equity curve and metrics
+- **Health Dashboard** — Real-time system health (Kronos, LLM, loops, brokers)
+- **Performance View** — Strategy performance metrics (Sharpe, win rate, max drawdown, etc.)
+- **Positions Panel** — Detailed open positions with unrealized P&L
+- **Policy Cache View** — View learned policy cache entries and hit rates
+- **Scanner** — Market scanner with filtering and sorting
+- **WebSocket Client** — Real-time WS connection to orchestrator for live updates
 
 ## Usage
 
@@ -32,11 +39,15 @@ cargo run -p tredo-tui
 | Key | Action |
 |-----|--------|
 | `q` / `Ctrl-C` | Quit (backend keeps running) |
-| `Tab` / `1`-`8` | Switch tabs |
+| `Tab` / `1`-`0` | Switch tabs |
 | `↑` / `↓` | Scroll lists, scroll tree, select model |
-| `Enter` | Switch model (in Models tab) |
+| `←` / `→` | Navigate action buttons |
+| `Enter` | Activate / Confirm |
 | `r` | Force refresh |
-| `Esc` | Reset scroll |
+| `s` | Sort current table by next column |
+| `/` | Search/filter (COT Log, Policy Cache) |
+| `?` | Toggle keyboard shortcuts overlay |
+| `Esc` | Back / Close / Cancel |
 
 ### API Endpoints Used
 
@@ -52,6 +63,9 @@ The TUI connects to the orchestrator at `http://localhost:8082/api`:
 | `/watchlist` | Monitored symbols |
 | `/models` | Available Ollama models |
 | `/models/set` | Switch active model |
+| `/backtest` | Backtest results |
+| `/performance` | Strategy metrics |
+| `/ws` | WebSocket for real-time updates |
 
 This is the **primary interface** for the tredo system. Keyboard-driven for low-latency desk use.
 

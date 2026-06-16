@@ -17,6 +17,7 @@ use tokio::sync::{watch, Mutex as TokioMutex};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use tredo_autonomous::state::initialize_autonomous_system;
+use tredo_core::paper_engine::TradingMode;
 
 // ── Loop Manager to dynamically start and stop the background temporal loops ──
 struct LoopManager {
@@ -804,6 +805,42 @@ async fn run_backtest(State(state): State<WebState>) -> impl axum::response::Int
     }))
 }
 
+/// Structured backtest results endpoint — returns detailed backtest data for TUI display.
+async fn get_backtest_results(State(state): State<WebState>) -> impl axum::response::IntoResponse {
+    let rules = state.orchestrator.state.rules.read().await;
+    let mut backtester = tredo_core::Backtester::new(rules.clone());
+    let mut dummy_data = Vec::new();
+    for i in 0..50 {
+        dummy_data.push(tredo_core::MarketContext {
+            symbol: "NIFTY".to_string(),
+            current_price: 24000.0 + (i as f64 * 10.0),
+            high: 24050.0,
+            low: 23950.0,
+            previous_close: 23980.0,
+            timestamp: chrono::Utc::now(),
+            daily_pnl: 0.0,
+            consecutive_losses: 0,
+            equity: 100000.0,
+            is_red_folder_day: false,
+            trend_direction: None,
+        });
+    }
+    let result = backtester.run_simulation(dummy_data);
+    Json(serde_json::json!({
+        "total_trades": result.total_trades,
+        "win_rate": result.win_rate,
+        "total_pnl": result.total_pnl,
+        "max_drawdown": result.max_drawdown,
+        "sharpe_ratio": result.sharpe_ratio,
+        "decisions": result.decisions,
+        "message": format!(
+            "Trades: {} | Win Rate: {:.1}% | Total P&L: ₹{:.2} | Max DD: {:.2}% | Sharpe: {:.2}",
+            result.total_trades, result.win_rate * 100.0,
+            result.total_pnl, result.max_drawdown * 100.0, result.sharpe_ratio
+        )
+    }))
+}
+
 #[derive(serde::Deserialize)]
 struct PriceQuery {
     symbol: String,
@@ -946,7 +983,6 @@ async fn get_crypto_prices(
 // --- WebSocket for real-time updates (prices, COT, signals, portfolio) ---
 // Clients connect to ws://host:port/ws
 // In production, use a broadcast::Sender from loops / state to fan-out messages.
-#[allow(dead_code)]
 async fn ws_handler(ws: WebSocketUpgrade, State(state): State<WebState>) -> Response {
     ws.on_upgrade(|mut socket: WebSocket| async move {
         let _ = socket
@@ -976,10 +1012,82 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<WebState>) -> Resp
     })
 }
 
-// Example broadcast helper (call from loops when pushing COT or price updates)
-pub async fn broadcast_update(_msg: &str) {
-    // TODO: integrate with a tokio::sync::broadcast channel stored in WebState
-    // or SharedState. Example: state.ws_tx.send(msg.to_string()).await.ok();
+// ── Broker Management Endpoints ──────────────────────────────────────────────
+
+/// Get current broker status — mode, broker name, connection state, and registered brokers.
+async fn get_broker_status(State(state): State<WebState>) -> impl axum::response::IntoResponse {
+    let mode = state.orchestrator.state.broker_registry.current_mode().await;
+    let broker_name = state.orchestrator.state.broker_registry.current_broker_name().await;
+
+    Json(serde_json::json!({
+        "mode": mode,
+        "broker": broker_name,
+        "connected": true, // the registry always has paper; live status via broker
+        "paper_balance": state.orchestrator.state.config.initial_balance,
+    }))
+}
+
+/// Switch between paper and live trading mode.
+/// Body: {"mode": "paper" | "live"}
+#[derive(serde::Deserialize)]
+struct SwitchModeRequest {
+    mode: String,
+}
+
+async fn switch_broker_mode(
+    State(state): State<WebState>,
+    Json(req): Json<SwitchModeRequest>,
+) -> impl axum::response::IntoResponse {
+    let new_mode = match req.mode.to_lowercase().as_str() {
+        "paper" => TradingMode::Paper,
+        "live" => TradingMode::Live,
+        _ => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "error": "Invalid mode. Use 'paper' or 'live'."
+                })),
+            );
+        }
+    };
+
+    match state.orchestrator.state.broker_registry.set_mode(new_mode).await {
+        Ok(()) => {
+            let broker_name = state.orchestrator.state.broker_registry.current_broker_name().await;
+            let msg = format!("Switched to {} mode via {}", req.mode, broker_name);
+
+            state.orchestrator.state.push_cot(
+                "MetaControl",
+                &format!("Trading mode switch: {}", req.mode),
+                "MODE_SWITCH",
+                &msg,
+                1.0,
+                0,
+                None,
+                None,
+            ).await;
+
+            println!("[Orchestrator] 🔄 {}", msg);
+
+            (
+                axum::http::StatusCode::OK,
+                Json(serde_json::json!({
+                    "success": true,
+                    "mode": new_mode,
+                    "broker": broker_name,
+                    "message": msg
+                })),
+            )
+        }
+        Err(e) => (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "success": false,
+                "error": format!("Failed to switch mode: {}", e)
+            })),
+        ),
+    }
 }
 
 async fn get_crypto_market(
@@ -1047,6 +1155,62 @@ async fn get_crypto_market(
     }))
 }
 
+async fn get_policy_cache(State(state): State<WebState>) -> impl axum::response::IntoResponse {
+    let cache = tredo_runtime::policy_cache::PolicyCache::from_disk(
+        state.orchestrator.state.clone(),
+    );
+
+    // Map entries to include computed fields (win_rate, confidence) that serde
+    // can't serialize automatically since they are methods, not struct fields.
+    let top: Vec<serde_json::Value> = cache
+        .top_performers(3, 20)
+        .into_iter()
+        .map(|e| {
+            serde_json::json!({
+                "features": e.features,
+                "recommended_action": e.recommended_action,
+                "sample_size": e.sample_size,
+                "wins": e.wins,
+                "losses": e.losses,
+                "avg_pnl_pct": e.avg_pnl_pct,
+                "avg_regret": e.avg_regret,
+                "win_rate": e.win_rate(),
+                "confidence": e.confidence(),
+            })
+        })
+        .collect();
+
+    let (cache_lookups, cache_hits, hit_rate) = cache.hit_stats();
+    let hit_rate_history = cache.hit_rate_history();
+    let top_win_rate_history = cache.top_win_rate_history();
+    let pnl_history = cache.pnl_history();
+    let equity_history = cache.equity_history();
+    let confidence_history = cache.confidence_history();
+    let streak_history = cache.streak_history();
+
+    Json(serde_json::json!({
+        "total_entries": cache.size(),
+        "total_samples": cache.total_samples(),
+        "config": {
+            "min_samples": cache.config().min_samples,
+            "min_win_rate": cache.config().min_win_rate,
+            "min_confidence": cache.config().min_confidence,
+        },
+        "hit_stats": {
+            "total_lookups": cache_lookups,
+            "cache_hits": cache_hits,
+            "hit_rate": hit_rate,
+        },
+        "hit_rate_history": hit_rate_history,
+        "top_win_rate_history": top_win_rate_history,
+        "pnl_history": pnl_history,
+        "equity_history": equity_history,
+        "confidence_history": confidence_history,
+        "streak_history": streak_history,
+        "top_performers": top,
+    }))
+}
+
 async fn get_news(State(state): State<WebState>) -> impl axum::response::IntoResponse {
     let client = reqwest::Client::new();
     let fetcher = tredo_core::NewsFetcher::new(client, (*state.orchestrator.state.config).clone()); // free news APIs + keys (research: Alpha Vantage, Finnhub etc.)
@@ -1089,6 +1253,26 @@ async fn main() {
     };
     // Initialize the Tredo agent hierarchy (zero-copy Arc sharing from orchestrator)
     orchestrator.init_tredo();
+
+    // === NEW: Initialize the global OutcomeProcessor for self-evolution ===
+    {
+        let db_for_meta = (*orchestrator.state.episode_store).clone();
+        tredo_autonomous::execution_coordinator::init_outcome_processor(
+            (*orchestrator.state.episode_store).clone(),
+            db_for_meta,
+        ).await;
+        println!("[Orchestrator] 🧬 OutcomeProcessor initialized — self-evolution loop active");
+
+    // === agentmemory auto-start hint ===
+    {
+        let mem = tredo_core::AgentMemoryClient::new();
+        match mem.recall("health check").await {
+            Ok(_) => println!("[Orchestrator] 🧠 agentmemory service detected — cross-session trained intelligence active"),
+            Err(_) => println!("[Orchestrator] ℹ agentmemory not running. Start with `agentmemory connect` for persistent cross-session trained memory."),
+        }
+    }
+    }
+
     let client = reqwest::Client::new();
 
     restore_portfolio_state(&orchestrator.state).await;
@@ -1096,6 +1280,35 @@ async fn main() {
     restore_watchlist(&orchestrator.state).await;
 
     let assets = initialize_system(&orchestrator, &client).await;
+
+    // ── Live Broker Initialization ──────────────────────────────────────
+    // Check env vars for Zerodha Kite credentials and register the live broker
+    // if they are present. The broker will be ready for switching via the API.
+    {
+        let zerodha_api_key = std::env::var("ZERODHA_API_KEY").ok();
+        let zerodha_api_secret = std::env::var("ZERODHA_API_SECRET").ok();
+        let zerodha_request_token = std::env::var("ZERODHA_REQUEST_TOKEN").ok();
+
+        if let (Some(api_key), Some(api_secret)) = (&zerodha_api_key, &zerodha_api_secret) {
+            let request_token = zerodha_request_token.as_deref().unwrap_or("");
+            let live_broker = tredo_broker_zerodha::create_zerodha_broker(
+                api_key,
+                api_secret,
+                request_token,
+            );
+            orchestrator.state.broker_registry.register_live_broker(live_broker).await;
+
+            if !request_token.is_empty() {
+                println!("[Orchestrator] ✅ Zerodha Kite broker registered with request_token");
+            } else {
+                println!("[Orchestrator] ✅ Zerodha Kite broker registered (no token — use /api/broker/connect to authenticate)");
+            }
+            println!("[Orchestrator]    To switch to live mode: POST /api/broker/switch with {{\"mode\":\"live\"}}");
+        } else {
+            println!("[Orchestrator] ℹ No Zerodha credentials found. Set ZERODHA_API_KEY and ZERODHA_API_SECRET for live trading.");
+            println!("[Orchestrator]    Paper trading is active by default.");
+        }
+    }
 
     // Auto-seed a sensible default watchlist on first run if empty.
     // This lets the agent start trading (paper) immediately with no extra setup.
@@ -1160,6 +1373,7 @@ async fn main() {
         .route("/trigger_cycle", post(trigger_orchestra_cycle))
         .route("/rules", post(update_rules))
         .route("/backtest", get(run_backtest))
+        .route("/backtest/results", get(get_backtest_results))
         .route("/price", get(fetch_live_stock_price))
         .route("/agents", get(get_agent_tree))
         .route("/skills", get(get_skill_scores))
@@ -1171,7 +1385,12 @@ async fn main() {
         .route("/crypto/symbols", get(get_crypto_symbols))
         .route("/crypto/prices", get(get_crypto_prices))
         .route("/crypto/market", get(get_crypto_market))
-        .route("/news", get(get_news));
+        // ── Broker Management Routes ─────────────────────────────────------
+        .route("/broker/status", get(get_broker_status))
+        .route("/broker/switch", post(switch_broker_mode))
+        .route("/news", get(get_news))
+        .route("/policy-cache", get(get_policy_cache))
+        .route("/ws", get(ws_handler));
 
     let cors = CorsLayer::new()
         .allow_origin(Any)

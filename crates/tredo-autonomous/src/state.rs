@@ -10,6 +10,7 @@ use tredo_core::{
     PivotLevels, SkillVote, TradingGoals, VectorMemory,
 };
 use tredo_core::{CandlestickPattern, MultiTfPatternConfirmation};
+use tredo_core::paper_engine::{BrokerRegistry, PaperEngineConfig};
 
 /// Maximum COT entries kept in RAM before flushing to SQLite.
 const MAX_COT_RAM: usize = 50;
@@ -121,6 +122,10 @@ pub struct SharedState {
     /// Latest rich metrics snapshot per symbol from MarketMetricsMeter tool (RSI/MACD/ATR/BB/Stoch/vol/regime/fib/confluence).
     /// Connected to pipeline, debate, strategy (autonomous levels), aggregator (via skill), memory recall, WS price updates.
     pub latest_metrics: Arc<RwLock<HashMap<String, crate::market_metrics_meter::MetricsSnapshot>>>,
+
+    /// Broker registry for live trading — routes orders through PaperBroker or Zerodha/other.
+    /// When mode is Live, trades are executed on the real exchange via the registered broker adapter.
+    pub broker_registry: Arc<BrokerRegistry>,
 }
 
 impl SharedState {
@@ -211,6 +216,7 @@ impl SharedState {
             last_aggregated_signal: Arc::new(RwLock::new(None)),
             latest_metrics: Arc::new(RwLock::new(HashMap::new())),
             update_tx: Arc::new(update_tx),
+            broker_registry: Arc::new(BrokerRegistry::new(PaperEngineConfig::default())),
         })
     }
 }
@@ -265,12 +271,18 @@ impl SharedState {
         }
 
         // Broadcast for WS real-time (connects to TUI/clients with debate/trained data)
+        // Include all fields the COT renderer expects: timestamp, input, id, chain_id, etc.
         let update = serde_json::json!({
             "type": "cot",
+            "id": entry.id,
+            "chain_id": entry.chain_id,
+            "parent_id": entry.parent_id,
             "agent": entry.agent,
+            "input": entry.input,
             "action": entry.action,
             "reason": entry.reason,
             "confidence": entry.confidence,
+            "timestamp": entry.timestamp,
             "symbol": entry.symbol
         })
         .to_string();

@@ -3,7 +3,7 @@
 **Focus:** Self-evolving, reflective, meta-learning, highly adaptive agentic systems that learn from mistakes, update themselves (rules, tools, memory, workflows, architecture), and improve over time without constant human intervention.
 
 **Date:** 2026-06-14  
-**Context:** Additional deep research for the TREDO/tredo project. The current implementation has strong foundational architecture (hierarchical agents, debate, episodes with regret, DisciplinedCore, trained memory recall, temporal loops) but many components remain stubbed or incomplete (paper execution stub, placeholder backtester, partial debate wiring, limited end-to-end self-evolution loop). User explicitly wants research toward a complete, "intact" working self-evolving autonomous system for stocks, crypto, and multi-asset markets — not just another bot or static agent.
+**Context:** Additional deep research for the TREDO/tredo project. The current implementation has strong foundational architecture (hierarchical agents, debate, episodes with regret, DisciplinedCore, trained memory recall, temporal loops, unified runtime, broker adapters) with debate and reflection wired, but some components still need hardening for full production autonomy (realistic LOB simulation, full LanceDB vector memory, extended self-evolution validation). User explicitly wants research toward a complete, "intact" working self-evolving autonomous system for stocks, crypto, and multi-asset markets — not just another bot or static agent.
 
 **Sources:** arXiv papers (MetaAgent 2508.00271, TradingGroup 2508.17565, Self-Evolving Agents Survey 2507.21046, TradingAgents), GitHub repos (EvoAgentX/Awesome-Self-Evolving-Agents, MetaAgent, TradingAgents), industry surveys, Reflexion-style mechanisms, HyperAgents, and production patterns for continual improvement in agentic trading.
 
@@ -137,11 +137,11 @@ From codebase analysis (docs, Rust files, orchestrator, core, autonomous crates)
 - Hierarchical trained memory recall (local vector + agentmemory) injected into agents.
 - Temporal loops (fast/med/slow) — slow loop is natural home for batch reflection + meta.
 - COT, episodes, skills trait, low-resource design.
-- Paper execution + basic (stub) backtester.
+- Paper execution + backtest engine (CSV-driven with realistic fills).
 
 **Critical gaps causing "not working" for full autonomous self-evolving operation**:
-- Execution layer is stub / paper-only (execute_setup just prints; no real broker, limited order modeling, no realistic slippage/impact).
-- Backtester is placeholder (hardcoded fake results in several places; no integration with episodes or realistic simulation).
+- Execution layer has real broker adapters (Alpaca, Zerodha) but live paths need real capital testing with tiny size. Paper paths are solid.
+- Backtester is functional (CSV-driven) but lacks realistic LOB simulation and full integration with episode reflection.
 - Debate is incomplete (only Proposer has full implementation with skills + recall; others partial; no robust aggregator wired into StrategyDecision end-to-end).
 - Reflection loop not fully closed: Deep reflection exists but not reliably feeding MetaControl rule updates or procedural memory in production runs. Memory injection is present in some agents but not universal.
 - No persistent decision log + realized outcome resolution loop (like TradingAgents) that automatically generates reflections on next similar ticker run and injects lessons.
@@ -164,7 +164,7 @@ Result: The ambitious self-evolving vision exists in design and partial componen
 - **Specialist + Skill Layer**: Pluggable AgentSkill (technical, sentiment, vol, regime, correlation, on-chain, options surface, etc.). Sub-agents remain fast/deterministic.
 - **Debate & Synthesis Layer** (medium loop): Full Proposer (bullish proposal + entry/SL/TP), Critic, Risk, Historian (memory recall of similar past episodes). Aggregator with confidence thresholds and risk veto. Use LangGraph-style state machine for rapid iteration, then port to Rust for production.
 - **Decision + Dynamic Risk Layer**: StrategyDecision synthesizes debate → validates against DisciplinedCore (memory-adjusted) → dynamic risk model (learned stop-loss/TP sizing from past regret patterns, as in TradingGroup).
-- **Execution Layer** (intact, not stub): Paper engine with realistic modeling (LOB impact, variable slippage, latency). Live path via broker (start with Alpaca for API/MCP friendliness, add IBKR/CCXT). Full order lifecycle, partial fills, accounting.
+- **Execution Layer** (intact, with real broker adapters): Paper engine with realistic modeling (slippage, latency). Live path via broker adapters (`AlpacaBroker` in `tredo-broker-alpaca`, `ZerodhaKiteBroker` in `tredo-broker-zerodha`) implementing `BrokerAdapter`. Full order lifecycle, partial fills, accounting. Gated by `PAPER_MODE` and `--confirm-live`.
 - **Outcome Capture**: Every action → rich TradingEpisode (market snapshot, full reasoning trace including debate turns, action, outcome, holding period, slippage, PnL, regret attribution).
 - **Reflection Layer** (post-trade + slow loop):
   - Lightweight daily reflection.
@@ -175,6 +175,7 @@ Result: The ambitious self-evolving vision exists in design and partial componen
   - Episodic store (redb/SQLite).
   - Vector store (upgrade to real LanceDB) for similarity.
   - Procedural memory: Lessons → concrete rule updates, risk parameter adjustments, tool refinements.
+  - **Policy Cache** (`tredo-runtime`): Learned (features → action → outcome) lookup table that short-circuits debate on familiar setups, reducing LLM cost and latency.
   - Persistent decision log with injected reflections on future runs.
 - **Meta-Control / Self-Evolution Layer** (slow + inter-task):
   - Weekly (or triggered by high-regret clusters) review of episodes.
@@ -201,7 +202,7 @@ This matches patterns in TradingGroup (per-agent self-reflection + dynamic risk)
 
 ### Implementation Path Toward "Intact" (Prioritized)
 1. Wire full debate end-to-end + aggregator into StrategyDecision (complete the 4 roles using existing skill patterns).
-2. Make execution layer real (realistic paper first, then broker integration — Alpaca MCP is attractive for agentic natural-language oversight).
+2. Make execution layer real (realistic paper first, then broker integration — Alpaca adapter is implemented in `tredo-broker-alpaca`, live paths gated; Zerodha also available).
 3. Implement closed outcome resolution + reflection injection loop (like TradingAgents memory log + realized returns).
 4. Upgrade reflection to reliably feed MetaControl + procedural memory updates (rule adaptation, dynamic risk params).
 5. Add realistic simulation harness (QuantReplay or equivalent) and use it for validation of adaptations.

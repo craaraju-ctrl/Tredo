@@ -114,7 +114,7 @@ tredo is a **strong, ahead-of-curve realization** of the agentic trading vision 
 - **Skills as "how"**: Pluggable AgentSkill trait (sentiment, vol, regime, patterns, trained-memory recall, etc.).
 - **Observability & UI**: Full COT tree in ratatui TUI (primary) + Tauri. Superior to many research CLIs for desk use.
 - **Pragmatic hybrid**: Rust core (safety, perf, TUI, loops, rules) + Python Kronos forecast service + Ollama/LLM. Low-resource design documented.
-- **Gaps vs literature** (internal): Vector still prototype (JSON vs LanceDB promise), debate wiring maturing, some duplication (deprecated tredo-agents), rebrand debt. But core skeleton is more production-oriented than most academic/open-source peers.
+- **Gaps vs literature** (internal): Vector still prototype (JSON vs LanceDB promise), debate wiring maturing, tredo-agents removed from workspace, rebrand debt. But core skeleton is more production-oriented than most academic/open-source peers.
 
 tredo can serve as a **reference implementation** for "safe, observable, memory-driven hierarchical agentic trading co-pilot" — especially for teams wanting Rust-level guarantees rather than pure Python/LangGraph.
 

@@ -9,8 +9,7 @@
 //! StrategyEngine (JS/Rust) → TradeSignal
 //!     → BrokerAdapter::place_order(order)
 //!         → PaperBroker (PaperEngine)  [PAPER MODE]
-//!         → ZerodhaKiteBroker          [LIVE MODE]
-//!         → AngelOneBroker             [LIVE MODE]
+//!         → LiveBroker (TODO)         [LIVE MODE]
 //! ```
 //!
 //! PaperEngine features:
@@ -1002,208 +1001,10 @@ impl BrokerAdapter for PaperBroker {
     }
 }
 
-// ── Live Broker Stubs ────────────────────────────────────────────────────────
-
-/// Zerodha Kite Live Broker — connects to the real Kite API.
-/// Same code path as PaperBroker — only the settlement differs.
-#[allow(dead_code)]
-#[derive(Debug)]
-pub struct ZerodhaKiteBroker {
-    api_key: String,
-    api_secret: String,
-    access_token: RwLock<Option<String>>,
-    connected: RwLock<bool>,
-    base_url: String,
-}
-
-impl ZerodhaKiteBroker {
-    pub fn new(api_key: &str, api_secret: &str, base_url: &str) -> Self {
-        Self {
-            api_key: api_key.to_string(),
-            api_secret: api_secret.to_string(),
-            access_token: RwLock::new(None),
-            connected: RwLock::new(false),
-            base_url: base_url.to_string(),
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl BrokerAdapter for ZerodhaKiteBroker {
-    async fn connect(&self) -> Result<(), String> {
-        // DEFERRED per user request (real money only after full paper validation of autonomous system).
-        // When ready: implement Kite Connect OAuth flow here (POST /session/token), handle 2FA, token refresh.
-        // For now, this remains a clear stub so swapping the execution layer later is a small change.
-        Err("Zerodha Kite live broker is a deferred stub (real APIs gated until paper hands-off is perfect). Use PaperBroker for now.".to_string())
-    }
-
-    async fn disconnect(&self) -> Result<(), String> {
-        let mut c = self.connected.write().await;
-        *c = false;
-        Ok(())
-    }
-
-    async fn place_order(
-        &self,
-        _request: OrderRequest,
-        _market_price: f64,
-    ) -> Result<String, String> {
-        Err("Zerodha Kite live broker not yet implemented".to_string())
-    }
-
-    async fn cancel_order(&self, _order_id: &str) -> Result<(), String> {
-        Err("Zerodha Kite live broker not yet implemented".to_string())
-    }
-
-    async fn get_positions(&self) -> Result<Vec<Position>, String> {
-        Err("Zerodha Kite live broker not yet implemented".to_string())
-    }
-
-    async fn get_summary(&self) -> Result<PortfolioSummary, String> {
-        Err("Zerodha Kite live broker not yet implemented".to_string())
-    }
-
-    async fn get_order_status(&self, _order_id: &str) -> Result<OrderStatus, String> {
-        Err("Zerodha Kite live broker not yet implemented".to_string())
-    }
-
-    async fn get_recent_trades(&self, _limit: usize) -> Result<Vec<ClosedTrade>, String> {
-        Err("Zerodha Kite live broker not yet implemented".to_string())
-    }
-
-    async fn update_price(
-        &self,
-        _symbol: &str,
-        _market_price: f64,
-    ) -> Result<Vec<ClosedTrade>, String> {
-        Err("Zerodha Kite live broker not yet implemented".to_string())
-    }
-
-    async fn close_position(
-        &self,
-        _position_id: &str,
-        _exit_price: f64,
-    ) -> Result<ClosedTrade, String> {
-        Err("Zerodha Kite live broker not yet implemented".to_string())
-    }
-
-    async fn check_risk(
-        &self,
-        _symbol: &str,
-        _estimated_cost: f64,
-    ) -> Result<RiskCheckResult, String> {
-        Err("Zerodha Kite live broker not yet implemented".to_string())
-    }
-
-    async fn reset(&self) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn mode(&self) -> TradingMode {
-        TradingMode::Live
-    }
-
-    fn broker_name(&self) -> &str {
-        "Zerodha Kite"
-    }
-}
-
-// ── Angel One Broker Stub ────────────────────────────────────────────────────
-
-#[allow(dead_code)]
-#[derive(Debug)]
-pub struct AngelOneBroker {
-    api_key: String,
-    api_secret: String,
-    connected: RwLock<bool>,
-}
-
-impl AngelOneBroker {
-    pub fn new(api_key: &str, api_secret: &str) -> Self {
-        Self {
-            api_key: api_key.to_string(),
-            api_secret: api_secret.to_string(),
-            connected: RwLock::new(false),
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl BrokerAdapter for AngelOneBroker {
-    async fn connect(&self) -> Result<(), String> {
-        Err("Angel One live broker not yet implemented".to_string())
-    }
-
-    async fn disconnect(&self) -> Result<(), String> {
-        let mut c = self.connected.write().await;
-        *c = false;
-        Ok(())
-    }
-
-    async fn place_order(
-        &self,
-        _request: OrderRequest,
-        _market_price: f64,
-    ) -> Result<String, String> {
-        Err("Angel One live broker not yet implemented".to_string())
-    }
-
-    async fn cancel_order(&self, _order_id: &str) -> Result<(), String> {
-        Err("Angel One live broker not yet implemented".to_string())
-    }
-
-    async fn get_positions(&self) -> Result<Vec<Position>, String> {
-        Err("Angel One live broker not yet implemented".to_string())
-    }
-
-    async fn get_summary(&self) -> Result<PortfolioSummary, String> {
-        Err("Angel One live broker not yet implemented".to_string())
-    }
-
-    async fn get_order_status(&self, _order_id: &str) -> Result<OrderStatus, String> {
-        Err("Angel One live broker not yet implemented".to_string())
-    }
-
-    async fn get_recent_trades(&self, _limit: usize) -> Result<Vec<ClosedTrade>, String> {
-        Err("Angel One live broker not yet implemented".to_string())
-    }
-
-    async fn update_price(
-        &self,
-        _symbol: &str,
-        _market_price: f64,
-    ) -> Result<Vec<ClosedTrade>, String> {
-        Err("Angel One live broker not yet implemented".to_string())
-    }
-
-    async fn close_position(
-        &self,
-        _position_id: &str,
-        _exit_price: f64,
-    ) -> Result<ClosedTrade, String> {
-        Err("Angel One live broker not yet implemented".to_string())
-    }
-
-    async fn check_risk(
-        &self,
-        _symbol: &str,
-        _estimated_cost: f64,
-    ) -> Result<RiskCheckResult, String> {
-        Err("Angel One live broker not yet implemented".to_string())
-    }
-
-    async fn reset(&self) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn mode(&self) -> TradingMode {
-        TradingMode::Live
-    }
-
-    fn broker_name(&self) -> &str {
-        "Angel One"
-    }
-}
+// ── Live Broker Stubs (removed) ──────────────────────────────────────────────
+// ZerodhaKiteBroker and AngelOneBroker stubs were removed. They returned
+// Err("not implemented") for every method — 100+ lines of dead code.
+// Real broker adapters should be implemented in separate files when needed.
 
 // ── BrokerRegistry ───────────────────────────────────────────────────────────
 
@@ -1214,6 +1015,16 @@ pub struct BrokerRegistry {
     live_brokers: RwLock<Vec<Arc<dyn BrokerAdapter>>>,
     active_mode: RwLock<TradingMode>,
     active_broker_name: RwLock<String>,
+}
+
+impl std::fmt::Debug for BrokerRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BrokerRegistry")
+            .field("active_mode", &self.active_mode)
+            .field("active_broker_name", &self.active_broker_name)
+            .field("live_broker_count", &self.live_brokers.try_read().ok().map(|b| b.len()))
+            .finish()
+    }
 }
 
 impl BrokerRegistry {

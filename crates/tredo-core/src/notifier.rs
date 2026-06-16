@@ -15,6 +15,7 @@ pub struct Notifier {
     whatsapp_sid: String,
     whatsapp_token: String,
     whatsapp_from: String,
+    whatsapp_recipient: String,
     client: Client,
 }
 
@@ -26,6 +27,7 @@ impl Notifier {
             whatsapp_sid: std::env::var("WHATSAPP_SID").unwrap_or_default(),
             whatsapp_token: std::env::var("WHATSAPP_TOKEN").unwrap_or_default(),
             whatsapp_from: std::env::var("WHATSAPP_FROM").unwrap_or_default(),
+            whatsapp_recipient: std::env::var("WHATSAPP_RECIPIENT").unwrap_or_default(),
             client: Client::new(),
         }
     }
@@ -75,10 +77,20 @@ impl Notifier {
             self.whatsapp_sid
         );
 
+        let recipient = if self.whatsapp_recipient.is_empty() {
+            std::env::var("WHATSAPP_RECIPIENT").unwrap_or_default()
+        } else {
+            self.whatsapp_recipient.clone()
+        };
+
+        if recipient.is_empty() {
+            return Err("WhatsApp recipient not configured (set WHATSAPP_RECIPIENT)".into());
+        }
+
         let text = format!("{}: {}", title, message);
         let params = [
             ("From", format!("whatsapp:{}", self.whatsapp_from)),
-            ("To", "whatsapp:+YOUR_RECIPIENT".to_string()), // configure recipient
+            ("To", format!("whatsapp:{}", recipient)),
             ("Body", text),
         ];
 

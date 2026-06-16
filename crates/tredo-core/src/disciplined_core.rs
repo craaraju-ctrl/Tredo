@@ -44,15 +44,16 @@ pub struct DisciplineRules {
 impl Default for DisciplineRules {
     fn default() -> Self {
         let mut skill_weights = HashMap::new();
-        skill_weights.insert("SentimentAnalyzer".to_string(), 0.30);
-        skill_weights.insert("VolatilityCalculator".to_string(), 0.20);
-        skill_weights.insert("RegimeDetector".to_string(), 0.25);
-        skill_weights.insert("CorrelationChecker".to_string(), 0.10);
-        skill_weights.insert("OnChainData".to_string(), 0.15);
-        skill_weights.insert("TrainedMemorySkill".to_string(), 0.20);
-        // New integrated tools (NewsAnalyser + MarketMetricsMeter) — connected to aggregator + memory + decision
-        skill_weights.insert("NewsAnalyser".to_string(), 0.28);
-        skill_weights.insert("MarketMetricsMeter".to_string(), 0.25);
+        // Weights normalized to sum to ~1.0 for proper ensemble aggregation
+        skill_weights.insert("SentimentAnalyzer".to_string(), 0.14);
+        skill_weights.insert("VolatilityCalculator".to_string(), 0.10);
+        skill_weights.insert("RegimeDetector".to_string(), 0.12);
+        skill_weights.insert("CorrelationChecker".to_string(), 0.06);
+        skill_weights.insert("OnChainData".to_string(), 0.08);
+        skill_weights.insert("TrainedMemorySkill".to_string(), 0.12);
+        skill_weights.insert("PatternRetriever".to_string(), 0.10);
+        skill_weights.insert("NewsAnalyser".to_string(), 0.14);
+        skill_weights.insert("MarketMetricsMeter".to_string(), 0.14);
 
         Self {
             use_daily_pivots: true,

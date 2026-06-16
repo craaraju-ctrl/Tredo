@@ -13,17 +13,17 @@ All changes must respect **Rust-high priority** (Kronos Python is the only justi
 
 ## 1. Identified Still-Pending Items (Prioritized)
 
-From Build.md §8 roadmap table + §10 validation + code greps (paper_engine stubs, vector_memory, llm TODOs, orchestrator TODO, .bak files, correlation notes):
+From Build.md §8 roadmap table + §10 validation + code greps (vector_memory, llm TODOs, orchestrator TODO, .bak files, correlation notes):
 
 **High Priority (must for "autonomous agentic" + self-evo credibility)**:
 1. **Extended self-evolution validation + observable compounding** (Build.md: "Reflection + Meta — Partial wiring"; validation note: "ready for longer runs"; "Debate rarely fires trade in <5m" — needs sequences).
-2. **Realistic paper execution (LOB/slippage) + broker adapters** (Build.md: "Execution (paper/live) — Paper stub"; "Backtester is placeholder"; live broker stubs in paper_engine.rs deferred until "paper hands-off is perfect").
+2. **Realistic paper execution (LOB/slippage) + broker adapter live testing** (Build.md: "Execution (paper/live) — Paper sim working + real broker adapters"; "Backtester is CSV-driven"; live broker adapters in `tredo-broker-alpaca` and `tredo-broker-zerodha` implemented, deferred until "paper hands-off is perfect").
 3. **Full LanceDB integration** (Build.md: "Memory (redb + vector) — vector prototype"; feature exists but arrow conflicts + not default/used at scale; JSON fallback is current).
 4. **Richer skills/tools + meta-adaptation of skills** (Build.md Skills section post-audit: "outputs still mostly side-effect"; "Self-evolution currently targets rules only"; "Expand library"; AgentOutput limited).
 5. **Real-time data feeds (Binance WS vs REST polling)** (Build.md: "Data feeds — Mixed (Binance WS, Yahoo)"; current is REST in loops.rs; architecture promises WS).
 
 **Medium**:
-6. Clean duplication (tredo-agents deprecated shim).
+6. Clean duplication (tredo-agents removed from workspace).
 7. Watchlist/env vs redb consistency + Ollama reliability (405s seen).
 8. Production hardening (Docker, OTEL/tracing, error handling).
 
@@ -50,7 +50,7 @@ Current state per Build.md §10: "The intact self-evolving agentic system is val
   - GitHub examples: tesser (Rust exchange connectors: tesser-paper for deterministic sim + tesser-binance WS/REST); genesis2025 (paper trading engine with order book features like OFI/OBI, simulated fills).
   - Rust crates: binance-rs / binance-spot / binance-futures-rs (WS with depth/trade streams, typed); tokio-tungstenite examples for raw Binance WS.
 - **Key Insights**: For paper, maintain local order book from live depth WS + REST snapshot. Simulate realistic fills (match against book levels, volume impact for slippage). Current market-price + fixed % slippage is too naive. Broker adapters: Thin trait over PaperBroker vs real (Binance uses API keys for signed orders; paper ignores).
-- **Validation**: Real-time paper crypto — subscribe depth for BTCUSDT, feed into PaperEngine, place "paper" orders, observe more variable fills vs current. Measure P&L realism vs simple sim. For broker: Start with Binance futures/spot adapter stub (gated).
+- **Validation**: Real-time paper crypto — subscribe depth for BTCUSDT, feed into PaperEngine, place "paper" orders, observe more variable fills vs current. Measure P&L realism vs simple sim. For broker: Test Alpaca paper adapter first, then tiny live with `tredo-broker-alpaca`.
 - **Implementation Notes**: Extend PaperEngine with `LocalOrderBook` struct + `apply_depth_update`. Use in fast loop.
 
 ### 2.3 Full LanceDB (Production Vector Memory/RAG)

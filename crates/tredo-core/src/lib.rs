@@ -2,15 +2,12 @@ pub mod agent;
 pub mod backtest;
 pub mod broker;
 pub mod calendar;
-pub mod circuit_breaker; // Circuit breaker for external APIs
 pub mod config;
 pub mod disciplined_core;
 pub mod episode;
-pub mod execution;
 pub mod goals;
 pub mod kronos_client;
 pub mod llm;
-pub mod logging; // Logging system
 pub mod memory;
 pub mod messages;
 pub mod news;
@@ -20,7 +17,7 @@ pub mod patterns;
 pub mod role;
 pub mod skill_aggregator; // Weighted ensemble aggregation for structured SkillResult outputs
 pub mod skills; // New AgentSkill trait for building skills/tools (pluggable agent capabilities)
-pub mod vector_memory; // Telegram / WhatsApp alerts (configured via tredo setup) - wired in runtime for all 5 high priority items.
+pub mod vector_memory; // Vector Memory for similarity search across trading episodes (LanceDB ANN + JSON fallback)
 
 pub use agent::{Agent, AgentInput, AgentOutput, AgentTier, SkillDirection};
 pub use agentmemory::AgentMemoryClient;
@@ -36,7 +33,6 @@ pub use disciplined_core::{
 pub use episode::{
     MarketStateSnapshot, PostTradeReflection, ReasoningStep, TradeOutcome, TradingEpisode,
 };
-pub use execution::ExecutionEngine;
 pub use goals::{TradingGoals, TradingMode};
 pub use kronos_client::{
     KronosClient, KronosForecastRequest, KronosForecastResponse, KronosForecastTool, OhlcvBar,

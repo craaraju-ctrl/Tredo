@@ -8,7 +8,10 @@ members = [
     "crates/tredo-server",
     "src-tauri",
     "crates/tredo-tui",
+    "crates/tredo-runtime",
+    "crates/tredo-broker-zerodha", "crates/tredo-broker-alpaca",
 ]
+
 
 [workspace.package]
 version = "0.2.0"

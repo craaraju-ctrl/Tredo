@@ -10,6 +10,8 @@ Main agents orchestrate with LLM and structured debate. Sub-agents are fast, det
 
 tredo structures its agents into the **`Tredo`** four-group orchestrator (Identifier / Verifier / Executer / Guardian). The beautiful Terminal UI (`tredo tui`) is the primary way to watch and control the live system.
 
+The **Runtime Engine** (`tredo-runtime`) wraps this hierarchy into an event-driven, multi-mode system with a world model, policy cache, and broker plugin system.
+
 ```mermaid
 graph TB
     subgraph "Tredo Logical Hierarchy"
@@ -41,6 +43,24 @@ graph TB
             OL[OutcomeLoggerAgent]
         end
     end
+
+    subgraph "Runtime Layer (tredo-runtime)"
+        RT[RuntimeEngine]
+        WM[WorldModelEngine]
+        PCACHE[PolicyCache]
+        AL[ActiveLearner]
+        INTRO[Introspector]
+        GM[GoalManager]
+        BR[BrokerPluginManager]
+    end
+
+    RT -->|orchestrates| TREDO
+    RT -->|updates| WM
+    RT -->|queries| PCACHE
+    RT -->|probes| AL
+    RT -->|introspects| INTRO
+    RT -->|manages goals| GM
+    RT -->|dispatches trades| BR
 ```
 
 ---
@@ -188,14 +208,16 @@ Each Main Agent is designed with a distinct **trading personality**:
 
 ---
 
-## 🛠️ Strong Skills + Rules + Roles + Trained Memory (Explicit Contract)
+## 🛠️ Strong Skills + Rules + Roles + Trained Memory + Policy Cache (Explicit Contract)
 
 Agents and sub-agents **already know what to do** (their Tredo role and responsibilities in the four groups and debate).
 
 - **Skills** (`tredo-core/src/skills.rs` — the `AgentSkill` trait + `TrainedMemorySkill` + `SkillWrapper`) tell them **how to do** things. Pluggable and executable: SentimentAnalyzer, VolatilityCalculator, regime detection, patterns, and the key `TrainedMemorySkill`. Agents/sub-agents can hold or receive `Vec<Box<dyn AgentSkill>>` and call `execute`.
 - **Rules** (`tredo-core/src/disciplined_core.rs`) tell **what to do and what not to do** (`DisciplineRules`, `validate_trade_setup`, `check_risk_limits`, etc.). These are now memory-aware via `apply_trained_memory_to_rules` (past regret/lessons can tighten confluence or risk limits dynamically).
 - **Hierarchical Trained Memory** (`SharedState::recall_trained_memory`) is how agents and sub-agents **understand exactly what they were doing** before: combines fast local vector RAG (recent trained episodes with regret) + long-term `AgentMemoryClient` (shared "trained intelligence" lessons). Used in StrategyDecision, every debate participant (Proposer/Critic/Risk/Historian), MarketIntelligence, Reflector, MetaControl, and even subs (e.g. ConfluenceScorer). Results are injected into COT, reasoning, and rule adjustments. Tagged steps like "StrongRules+Skills+TrainedMemory".
+- **Policy Cache** (`tredo-runtime/src/policy_cache.rs`) is the **learned trading memory** that records (market features → action → outcome) tuples and short-circuits expensive Ollama debate when the system has seen a similar setup before. It's a learned lookup table, not a neural network — interpretable, self-improving, and honest about when it doesn't have enough data. Seeded from historical trades on startup, updated after every close.
+- **World Model** (`tredo-runtime/src/world_model.rs`) maintains persistent beliefs about symbols, cross-symbol correlations, macro state, and active hypotheses that ground decisions in a coherent market understanding.
 
-This design keeps role code stable and focused while the skills layer provides composable "how", rules stay the iron constitution, and trained memory supplies the experience that makes the team smarter and less prone to repeating past mistakes. All wiring lives in `tredo-autonomous` (strategy_decision.rs, market_intelligence.rs, debate.rs, confluence_scorer.rs, etc.). Lightweight and compatible with the low-resource target.
+This design keeps role code stable and focused while the skills layer provides composable "how", rules stay the iron constitution, trained memory supplies the experience that makes the team smarter, policy cache reduces cost and latency, and world model provides persistent market context. All wiring lives in `tredo-autonomous` (strategy_decision.rs, market_intelligence.rs, debate.rs, confluence_scorer.rs, etc.) and `tredo-runtime` (engine.rs, policy_cache.rs, world_model.rs). Lightweight and compatible with the low-resource target.
 
 See also the Core Philosophy section in the root README and the dedicated sections in Research.md / Build.md.

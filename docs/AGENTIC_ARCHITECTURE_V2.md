@@ -47,6 +47,19 @@ flowchart LR
 
 ```mermaid
 graph TB
+    subgraph "RUNTIME LAYER (tredo-runtime)"
+        RT[RuntimeEngine]
+        WM[WorldModelEngine]
+        PCACHE[PolicyCache]
+        AL[ActiveLearner]
+        INTRO[Introspector]
+        GM[GoalManager]
+        PR[PortfolioReasoner]
+        SR[StreamingReasoner]
+        BR[BrokerPluginManager]
+        EB[EventBus]
+    end
+
     subgraph "META-CONTROL LAYER [Slow Loop — 24h]"
         MC[MetaControl Agent]
         REVIEW[Weekly: Review Episodes]
@@ -58,6 +71,7 @@ graph TB
         EPISODE[Episodic Store<br/>SQLite Database (WAL)]
         VECTOR[Vector Store<br/>LanceDB: embeddings + similarity]
         PROCEDURAL[Procedural Store<br/>accumulated lessons/rules]
+        PCACHE2[Policy Cache<br/>learned features→action→outcome]
     end
 
     subgraph "REASONING LAYER [Medium Loop — 5m]"
@@ -75,6 +89,20 @@ graph TB
         ANOMALY[Anomaly Detector<br/>Volume/Volatility Spikes]
     end
 
+    subgraph "EXECUTION & BROKER LAYER"
+        PAPER[PaperBroker<br/>Virtual trading]
+        ALPACA[AlpacaBroker<br/>US equities/crypto]
+        ZERODHA[ZerodhaKiteBroker<br/>India equities]
+    end
+
+    RT -->|orchestrates| ORCH
+    RT -->|updates| WM
+    RT -->|queries| PCACHE
+    RT -->|dispatches trades| BR
+    BR -->|paper| PAPER
+    BR -->|live| ALPACA
+    BR -->|live| ZERODHA
+
     MC -->|reads/writes| EPISODE
     MC -->|reads/writes| PROCEDURAL
     REVIEW --> ANALYZE
@@ -85,19 +113,22 @@ graph TB
     CRT -->|queries| VECTOR
     HIST -->|queries| EPISODE
     HIST -->|queries| VECTOR
+    PCACHE -->|short-circuits| PRO
 
     PRO --> AGG
     CRT --> AGG
     RSK --> AGG
     HIST --> AGG
-    AGG -->|Final Signal| EXEC[Execution Engine]
+    AGG -->|Final Signal| RT
+    RT -->|Trade| BR
 
-    Note: All debate participants + main agents also execute pluggable AgentSkills (how) and perform hierarchical trained memory recall (local vector + agentmemory) so they "understand exactly what they were doing" before. Rules (Disciplined Core) are applied with memory-based adjustments.
+    Note: All debate participants + main agents also execute pluggable AgentSkills (how) and perform hierarchical trained memory recall (local vector + agentmemory) so they "understand exactly what they were doing" before. Rules (Disciplined Core) are applied with memory-based adjustments. Policy Cache short-circuits debate on familiar setups.
 
     PRICE --> PRO & CRT & RSK
     NEWS --> PRO
     PATTERN --> PRO
     ANOMALY --> RSK
+    WM -->|beliefs| PRO & CRT & RSK
 ```
 
 ### Execution Loops (Temporal Hierarchy)
@@ -560,28 +591,33 @@ After each phase, run on paper mode for 48+ hours:
 |-------|-------------------|
 | **Phase A** | Episodes stored, reflections generated, rules auto-adjust |
 | **Phase B** | Similar episodes retrieved and influence decisions, news in prompts |
-| **Phase C** | 4 LLM calls complete within cycle, debate reduces false positives |
+| **Phase D** | Runtime engine cycles, policy cache learns, world model updates, broker adapters connect in paper | 4 LLM calls + cache short-circuits, debate reduces false positives, broker adapters tested |
 
 ```bash
 # Unit + integration
 cargo test -p tredo-core
 cargo test -p tredo-autonomous
 
-# Paper trading (manual)
+# Paper trading (legacy)
 cargo run -p tredo-orchestrator
 # Observe logs for episode creation, reflection, meta-control cycles
+
+# Paper trading (new unified CLI — recommended)
+cargo run -p tredo-runtime -- --mode paper
+# or validate mode
+cargo run -p tredo-runtime -- --mode validate --cycles 50
 ```
 
 ---
 
 ## 📊 Summary
 
-| Dimension | Phase A | Phase B | Phase C |
-|-----------|---------|---------|---------|
-| **Core idea** | Learn from mistakes | Remember past situations | Debate before acting |
-| **Key addition** | Episodic memory + Meta-control | Vector DB + News + Patterns | Multi-agent debate |
-| **New files** | 3 | 3 | 6 |
-| **Modified files** | 9 | 6 | 4 |
-| **Dependencies** | None | LanceDB, Arrow | None |
-| **LLM calls/cycle** | 0 (reflection = async) | +1 (news summary) | +4 (debate + aggregator) |
-| **Risk** | 🟢 Low — self-contained | 🟡 Medium — new DB | 🔴 High — latency |
+| Dimension | Phase A | Phase B | Phase C | Phase D (Runtime) |
+|-----------|---------|---------|---------|-------------------|
+| **Core idea** | Learn from mistakes | Remember past situations | Debate before acting | Unified runtime + brokers |
+| **Key addition** | Episodic memory + Meta-control | Vector DB + News + Patterns | Multi-agent debate | Runtime engine + Policy Cache + World Model + Broker Adapters |
+| **New files** | 3 | 3 | 6 | 8+ |
+| **Modified files** | 9 | 6 | 4 | 10+ |
+| **Dependencies** | None | LanceDB, Arrow | None | clap, tokio-tungstenite, binance-rs |
+| **LLM calls/cycle** | 0 (reflection = async) | +1 (news summary) | +4 (debate + aggregator) | +0–4 (cache short-circuits familiar setups) |
+| **Risk** | 🟢 Low — self-contained | 🟡 Medium — new DB | 🔴 High — latency | 🟡 Medium — new runtime complexity |

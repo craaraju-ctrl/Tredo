@@ -77,6 +77,25 @@ impl RiskGuardian {
         if proposed.position_size <= 0.0 {
             return Err("Position size must be positive".to_string());
         }
+
+        // === NEW: Enforce hard SL bounds ===
+        if proposed.stop_loss_price > 0.0 && proposed.entry_price > 0.0 {
+            let stop_pct = ((proposed.entry_price - proposed.stop_loss_price).abs()
+                           / proposed.entry_price) * 100.0;
+            if stop_pct < self.config.hard_min_stop_loss_pct * 100.0 {
+                return Err(format!(
+                    "Stop loss too tight: {:.3}% < min {:.3}% (prevents noise-driven exits)",
+                    stop_pct, self.config.hard_min_stop_loss_pct * 100.0
+                ));
+            }
+            if stop_pct > self.config.hard_max_stop_loss_pct * 100.0 {
+                return Err(format!(
+                    "Stop loss too wide: {:.3}% > max {:.3}% (prevents excessive risk per trade)",
+                    stop_pct, self.config.hard_max_stop_loss_pct * 100.0
+                ));
+            }
+        }
+
         Ok(())
     }
 }

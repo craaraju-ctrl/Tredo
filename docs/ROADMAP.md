@@ -223,6 +223,27 @@ flowchart LR
 
 ---
 
+- **Phase 9: Production Runtime & Broker Adapters** — Complete
+> Unified event-driven runtime, real broker adapters, multi-mode trading, policy cache, world model.
+
+```
+██████████████████████████████████████████████████ 100%
+```
+
+| Milestone | Status | Description |
+|-----------|--------|-------------|
+| Unified Runtime Engine | ✅ Done | `tredo-runtime` with event-driven architecture, multi-mode support |
+| Policy Cache | ✅ Done | Learned (features → action → outcome) lookup table reducing LLM calls |
+| World Model | ✅ Done | Persistent beliefs about symbols, correlations, macro state |
+| Active Learner | ✅ Done | Exploration budget for uncertain setups |
+| Alpaca Broker Adapter | ✅ Done | `tredo-broker-alpaca` — US equities + crypto, paper + live |
+| Zerodha Broker Adapter | ✅ Done | `tredo-broker-zerodha` — India equities + derivatives, OAuth2 |
+| Broker Plugin System | ✅ Done | `BrokerPluginManager` with interactive configuration |
+| Resilient Pipeline | ✅ Done | Fault-tolerant pipeline wrapper |
+| Introspector | ✅ Done | Self-awareness layer with agent mode reporting |
+
+---
+
 ## 🔮 Phase C: Multi-Agent Debate + Skills/Rules/Trained Memory + TUI — Complete
 
 > Full multi-agent debate (Proposer/Critic/Risk/Historian + aggregator) wired with pluggable skills and hierarchical trained memory. Strong explicit "skills tell how / rules tell what-not / agents know roles + memory makes them self-aware" layer implemented across the system. TUI now has hierarchical Agent & Sub-Agent Tree with skill scores and color legend.
@@ -300,6 +321,7 @@ flowchart TB
 | 6: Safety | ✅ Complete | Broker Adapters, Kill Switches | Q1 2025 |
 | 7: Production | ✅ Complete | Docker Deployment, 8GB RAM Optimization | Q1 2025 |
 | 8: Evolution | ✅ Complete | Episodic Memory, Patterns, Live COT UI | Q2 2025 |
+| 9: Production Runtime | ✅ Complete | Unified runtime, policy cache, world model, broker adapters, active learner | Q2 2026 |
 | C: Debate + Skills/Rules + TUI | ✅ Complete (100%) | Full debate + Strong Skills (AgentSkill) + Rules (memory-adjusted) + Hierarchical Trained Memory (self-understanding in all agents + subs) + TUI Agent Tree with skill scores + per-sub-agent COT | 2026-06-15 |
 
 > **Goal:** A stable, low-resource, high-discipline autonomous trading system that feels like a professional trading team.

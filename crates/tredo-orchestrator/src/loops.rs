@@ -56,6 +56,14 @@ pub async fn fast_loop(
                     // Update P&L for open positions
                     let _ = orchestrator.portfolio.update_position_pnl(symbol, price).await;
 
+                    // Broadcast price update via WebSocket
+                    let price_update = serde_json::json!({
+                        "type": "price",
+                        "symbol": symbol,
+                        "price": price,
+                    }).to_string();
+                    let _ = orchestrator.state.update_tx.send(price_update);
+
                     // Update 1m OHLCV
                     {
                         let mut history = orchestrator.state.ohlcv_history.write().await;
@@ -67,10 +75,25 @@ pub async fn fast_loop(
                 // SL / TP monitoring & auto-exit
                 let _ = orchestrator.execution.run(None).await;
 
-                // Portfolio snapshot every 12 cycles (~1 min)
+                // Portfolio snapshot and broadcast every 12 cycles (~1 min)
                 let cycle_num = Utc::now().timestamp();
                 if cycle_num % 60 < 6 {
                     let p = orchestrator.state.portfolio.read().await;
+                    let mr = p.total_trades_today.max(1);
+                    let portfolio_update = serde_json::json!({
+                        "type": "portfolio",
+                        "total_equity": p.total_equity,
+                        "cash_balance": p.cash_balance,
+                        "daily_pnl": p.daily_pnl,
+                        "daily_pnl_pct": p.daily_pnl_pct,
+                        "open_positions_count": p.open_positions.len(),
+                        "trades_today": p.total_trades_today,
+                        "winning_trades_today": p.winning_trades_today,
+                        "losing_trades_today": p.losing_trades_today,
+                        "consecutive_losses": p.consecutive_losses,
+                        "win_rate": p.winning_trades_today as f64 / mr as f64,
+                    }).to_string();
+                    let _ = orchestrator.state.update_tx.send(portfolio_update);
                     log_portfolio_snapshot(&p, &orchestrator.state).await;
                 }
             }
@@ -258,6 +281,7 @@ pub async fn slow_loop(
                 }
 
                 // 2. Run meta-control: review high-regret episodes, propose rule changes
+                // --- Start with legacy weekly review (kept for backward compatibility) ---
                 let meta = tredo_autonomous::meta_control::MetaControlAgent::new(state.clone());
                 match meta.weekly_review(7).await {
                     Ok(report) => {
@@ -265,6 +289,98 @@ pub async fn slow_loop(
                             report.total_episodes_reviewed, report.high_regret_episodes, report.changes_applied);
                     }
                     Err(e) => eprintln!("[SlowLoop] ⚠ Meta-review failed: {e}"),
+                }
+
+                // === NEW: Real EvolvedMetaControl call ===
+                let recent_regrets = state.episode_store
+                    .fetch_recent_regret_scores(20)
+                    .unwrap_or_default();
+                if recent_regrets.len() >= 15 {
+                    let avg_regret: f64 = recent_regrets.iter().sum::<f64>() / recent_regrets.len() as f64;
+                    if avg_regret > 0.65 {
+                        println!("[SlowLoop] 🚨 High avg regret ({:.2}) detected — running EvolvedMetaControl", avg_regret);
+
+                        let meta_evolved = tredo_autonomous::meta_control::EvolvedMetaControl::new(
+                            (*state.episode_store).clone(),
+                            0.05,
+                            1,
+                        );
+                        let current_config = tredo_autonomous::risk_guardian::RiskGuardianConfig::default_fallback();
+
+                        let current_regime = {
+                            let regime = state.market_regime.read().await;
+                            match *regime {
+                                Some(tredo_autonomous::types::MarketRegime::TrendingBull) =>
+                                    tredo_autonomous::regime_classifier::MarketRegime::TrendingBull,
+                                Some(tredo_autonomous::types::MarketRegime::TrendingBear) =>
+                                    tredo_autonomous::regime_classifier::MarketRegime::TrendingBear,
+                                Some(tredo_autonomous::types::MarketRegime::Ranging) =>
+                                    tredo_autonomous::regime_classifier::MarketRegime::Ranging,
+                                Some(tredo_autonomous::types::MarketRegime::Volatile) =>
+                                    tredo_autonomous::regime_classifier::MarketRegime::Volatile,
+                                _ => tredo_autonomous::regime_classifier::MarketRegime::Ranging,
+                            }
+                        };
+
+                        match meta_evolved.evaluate_and_adapt(
+                            &current_config,
+                            current_regime,
+                            10,
+                        ) {
+                            Some(new_config) => {
+                                println!(
+                                    "[SlowLoop] 📊 MetaControl ADAPTED: max_risk_per_trade_pct={:.4} (was {:.4}), max_leverage={}",
+                                    new_config.max_risk_per_trade_pct,
+                                    current_config.max_risk_per_trade_pct,
+                                    new_config.absolute_max_leverage
+                                );
+                                let _ = state.push_cot(
+                                    "MetaControl",
+                                    "Slow loop rule adaptation",
+                                    "RULE_ADAPT",
+                                    &format!(
+                                        "Adapted: max_risk {:.4}→{:.4}, leverage {}→{}",
+                                        current_config.max_risk_per_trade_pct,
+                                        new_config.max_risk_per_trade_pct,
+                                        current_config.absolute_max_leverage,
+                                        new_config.absolute_max_leverage
+                                    ),
+                                    0.9,
+                                    0,
+                                    None,
+                                    None,
+                                ).await;
+                            }
+                            None => {
+                                println!("[SlowLoop] MetaControl: no adaptation needed (regime unstable or regret not high enough)");
+                            }
+                        }
+                    } else {
+                        println!("[SlowLoop] MetaControl: avg regret {:.2} below threshold, no adaptation", avg_regret);
+                    }
+                }
+
+                // Also check for RULE_REVERT (if recent adaptation degraded performance)
+                if recent_regrets.len() >= 15 {
+                    let meta_evolved = tredo_autonomous::meta_control::EvolvedMetaControl::new(
+                        (*state.episode_store).clone(),
+                        0.05,
+                        1,
+                    );
+                    let current_config = tredo_autonomous::risk_guardian::RiskGuardianConfig::default_fallback();
+                    if let Some(_restored_config) = meta_evolved.check_and_revert_if_degraded(&current_config) {
+                        println!("[SlowLoop] ↩️ RULE_REVERT performed");
+                        let _ = state.push_cot(
+                            "MetaControl",
+                            "Rule revert due to degradation",
+                            "RULE_REVERT",
+                            "Performance degraded, reverting to previous rule version",
+                            0.85,
+                            0,
+                            None,
+                            None,
+                        ).await;
+                    }
                 }
 
                 // 3. Update agent market summary

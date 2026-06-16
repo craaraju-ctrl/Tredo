@@ -12,6 +12,8 @@ readme.workspace = true
 [dependencies]
 tredo-core = { path = "../tredo-core" }
 tredo-autonomous = { path = "../tredo-autonomous" }
+tredo-runtime = { path = "../tredo-runtime" }
+tredo-broker-zerodha = { path = "../tredo-broker-zerodha" }
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
 serde = { version = "1.0", features = ["derive"] }

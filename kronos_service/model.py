@@ -170,13 +170,4 @@ class KronosPredictor:
         return pd.DataFrame(preds, index=y_timestamp)
 
 
-# ── Backward-compat shims (main.py still uses these names) ───────────────────
-class KronosTokenizer:
-    @classmethod
-    def from_pretrained(cls, path):
-        return cls()
 
-class Kronos:
-    @classmethod
-    def from_pretrained(cls, path):
-        return cls()

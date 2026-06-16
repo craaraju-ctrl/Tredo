@@ -34,7 +34,6 @@ pub mod weight_tuner; // AttributionEngine + symmetric reward/penalty weight evo
 pub mod correlation_checker;
 pub mod debate;
 pub mod debate_orchestrator; // Multi-agent debate consensus engine
-pub mod execution_coordinator_fsm; // FSM-based execution coordinator with state machine
 pub mod market_metrics_meter; // New: Market Metrics Meter tool - computes rich indicators (RSI/MACD/ATR/BB/Stoch/Vol/Regime/Fib) as pluggable AgentSkill + direct meter for autonomous levels
 pub mod news_analyser; // New: integrated News Analyser (uses multi-API NewsFetcher + scores) as AgentSkill + tool, connected to memory/WS/pipeline/aggregator
 pub mod on_chain_data; // New on-chain tool for crypto skills (free API stub ready)
