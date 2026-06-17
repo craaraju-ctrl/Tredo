@@ -4,12 +4,16 @@
 
 ```mermaid
 flowchart TB
-    INPUT[Market Event\nPrice Tick / Signal] --> GATE{Disciplined Core Gate}
-    GATE -->|FAIL| REJECT[❌ Rejected\nNo trade taken]
-    GATE -->|PASS| LLM{Proceed to\nLLM Reasoning?}
+    INPUT[Market Event\nPrice Tick / Signal] --> GATE{HardRulesGate\nPriority-Based Blocking}
+    GATE -->|Critical/High FAIL| REJECT[❌ Rejected\nNo trade taken]
+    GATE -->|Medium FAIL + No Higher| MED_BLOCK[⚠️ Blocked\nRegime/Confluence]
+    GATE -->|Low FAIL| WARN[🟡 Warning Only\nPosition/Session]
+    GATE -->|All PASS| LLM{Proceed to\n5-Layer Pipeline?}
     LLM -->|Yes| AGENT[Agent Decision\nBUY / SELL / HOLD]
     LLM -->|No - Rules Sufficient| AUTO[Auto-Pass\nNo LLM needed]
     REJECT --> LOG[Log Violation]
+    MED_BLOCK --> LOG
+    WARN --> PIPELINE[Continue Pipeline\nwith Warning]
     AGENT --> EXEC[Execute / Log]
     AUTO --> EXEC
 ```
@@ -135,10 +139,13 @@ flowchart TB
 
 ---
 
-## 3. ⚠️ Risk Management (Hard Rules)
+## 3. ⚠️ Risk Management (Hard Rules — HardRulesGate)
 
 ```
 These rules are NON-NEGOTIABLE — they CANNOT be overridden by any agent.
+The HardRulesGate enforces ALL hard rules with priority-based blocking:
+  Critical > High > Medium > Low
+  Critical/High → always block. Medium → block if no Higher override. Low → warnings only.
 ```
 
 ```mermaid
@@ -234,20 +241,56 @@ flowchart TB
     CHECK5 -->|Yes| PASS[✅ ALL CHECKS PASSED\nProceed to LLM / Execution]
 ```
 
-### Checklist for a Valid Trade
+### HardRulesGate Priority-Based Blocking (12 Rules)
 
 ```
-[✅] Confluence Score ≥ Minimum Threshold
-[✅] Within Valid Trading Session (London/NY) OR Crypto
-[✅] No Red-Folder High-Impact Event ±30 minutes
-[✅] Max Risk ≤ 1% of Account Equity
-[✅] Max Daily Drawdown ≤ 3%
-[✅] Not in Consecutive Loss Halt State
-[✅] Portfolio Heat ≤ 15%
-[✅] Trades Today ≤ Max Daily Trades
-[✅] Position Sizing Correct (based on stop distance)
-[✅] Entry Criteria Met (direction, SL/TP, confidence)
+Layer 1 runs FIRST — no agents waste compute if hard rules fail.
+
+Critical (always block):
+  [🔴] Rule 1:  Trading Enabled (portfolio.trading_enabled)
+  [🔴] Rule 2:  Max Daily Drawdown ≤ 2%
+  [🔴] Rule 3:  Loss Limit Halt (emergency circuit breaker)
+  [🔴] Rule 4:  Emergency Drawdown Halt (peak-to-trough > 5%)
+
+High (always block):
+  [🟠] Rule 5:  Portfolio Heat ≤ 15%
+  [🟠] Rule 6:  Consecutive Losses ≤ max (default 3)
+  [🟠] Rule 7:  Max Daily Trades ≤ limit (default 10)
+  [🟠] Rule 8:  Cooldown Period (30s between trades)
+
+Medium (block if no Higher override):
+  [🟡] Rule 9:  Regime Safety (TrendingBear + low confluence)
+  [🟡] Rule 10: Confluence Minimum (regime-adaptive thresholds)
+
+Low (warnings only — never block):
+  [🔵] Rule 11: Position Limits (max positions per symbol)
+  [🔵] Rule 12: Session Timing (crypto bypasses check)
+
+✅ All 12 rules pass → proceed to 5-Layer Pipeline
 ```
+
+### Unit Test Coverage (14 Tests)
+
+All priority levels are validated by `hard_rules_gate::tests` in `tredo-autonomous`:
+
+| Test | Verifies |
+|------|----------|
+| `test_all_rules_pass` | Clean state → all 12 rules pass |
+| `test_critical_always_blocks` | Trading disabled + drawdown > 2% → Critical blocks |
+| `test_high_always_blocks` | Heat, losses, trades, cooldown → High blocks |
+| `test_medium_blocks_alone` | Bear regime + low confluence → Medium blocks when no Higher |
+| `test_medium_does_not_override_critical` | Critical + Medium → Critical wins |
+| `test_medium_does_not_override_high` | High + Medium → High wins |
+| `test_low_never_blocks` | 3 positions/symbol → Low warns, never blocks |
+| `test_critical_overrides_low` | Drawdown + position limit → Critical blocks, Low warns |
+| `test_multiple_high_rules` | 5 losses + 9 trades → High blocks with 2+ failures |
+| `test_confluence_regime_adaptive` | Ranging regime needs 0.70, default 0.5 fails |
+| `test_crypto_bypasses_session_timing` | BTC bypasses session check |
+| `test_priority_ordering` | Critical > High > Medium > Low via derive(Ord) |
+| `test_result_helper` | `HardRulesGateResult::passed()` helper works |
+| `test_all_12_rules_checked` | `total_rules_checked == 12` |
+
+Run: `cargo test --package tredo-autonomous hard_rules_gate::tests`
 
 ---
 

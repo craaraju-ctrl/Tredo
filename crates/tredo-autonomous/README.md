@@ -5,8 +5,9 @@ The intelligence layer of the tredo trading system — agent hierarchy, debate, 
 ## What it provides
 
 - **Agent Hierarchy** — Two-tier architecture with main agents (LLM-capable) and deterministic sub-agents across 4 groups (Identifier, Verifier, Executer, Guardian)
-- **Multi-Agent Debate** — Proposer/Critic/Risk/Historian roles with aggregator for trade signal generation
-- **Debate Orchestrator** — `DebateOrchestrator` that manages structured debate rounds, state transitions, and turn scheduling
+- **5-Layer Adversarial Pipeline** — `HardRulesGate` (Layer 1) → `RegimeClassifier` (Layer 2) → `DebateLayer` (Layer 3: BullTeam/BearTeam/Synthesizer) → `Judge` (Layer 4) → `Execution` (Layer 5). No LLM dependency — all intelligence is evidence-based and regime-adaptive.
+- **HardRulesGate** (`hard_rules_gate.rs`) — Layer 1: Priority-based hard rule enforcement (Critical > High > Medium > Low). Critical/High always block. Medium blocks only if no Higher override. Low = warnings only. Single top-level gate before any advisory layers.
+- **Debate Layer** (`debate_layer.rs`) — Layer 3: Multi-round adversarial debate system with BullTeam (12 bullish factors), BearTeam (11 bearish factors), Synthesizer, and Judge. The Judge evaluates debate quality ONLY — does NOT re-run risk/regime/confluence checks (those are handled by HardRulesGate).
 - **Autonomous Orchestrator** — `AutonomousOrchestrator` that wraps the full agent pipeline with state management and COT tracking
 - **Skills Implementation** — Concrete `AgentSkill` implementations: SentimentAnalyzer, VolatilityCalculator, RegimeDetector, CorrelationChecker, OnChainData, NewsAnalyser, MarketMetricsMeter
 - **Market Intelligence** — Market scanning, pivot/confluence analysis, pattern detection, Kronos forecast, news analysis, market metrics (Bollinger, ATR, Stochastics, RSI, volume profile)
@@ -30,6 +31,8 @@ The intelligence layer of the tredo trading system — agent hierarchy, debate, 
 | `orchestrator.rs` | `AutonomousOrchestrator` — full pipeline wrapper with state + COT |
 | `orchestrator_struct.rs` | Struct definitions for the orchestrator |
 | `orchestrator_phases.rs` | Phase implementations and transitions |
+| `hard_rules_gate.rs` | **NEW Layer 1**: Priority-based hard rule gate (Critical/High/Medium/Low) — single top-level enforcement |
+| `debate_layer.rs` | **NEW Layer 3**: Multi-round adversarial debate (BullTeam/BearTeam/Synthesizer/Judge) — no LLM dependency |
 | `debate.rs` | 4-role debate engine with aggregator |
 | `debate_orchestrator.rs` | `DebateOrchestrator` — structured debate rounds + state machine |
 | `market_intelligence.rs` | MI agent with skills + trained memory |

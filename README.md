@@ -2,11 +2,12 @@
 
 **A production-grade, Rust-first autonomous agentic trading co-pilot.**
 
-tredo combines a rigorous **Disciplined Core** (professional trading rules enforced in Rust), hierarchical multi-agent intelligence with structured debate, rich episodic memory with regret-driven reflection, and a powerful real-time Terminal UI.
+tredo combines a rigorous **Disciplined Core** (professional trading rules enforced in Rust), a **5-layer adversarial pipeline** (Hard Rules → Regime Detection → Multi-Agent Debate → Judge → Execution), rich episodic memory with regret-driven reflection, and a powerful real-time Terminal UI.
 
 - **Real-time paper trading validated** on live Binance data for crypto (BTC, ETH, SOL and more).
 - **Self-evolving loop** demonstrated: debate + skills + trained memory → paper execution → reflection with regret scoring → meta rule adaptation.
 - **Paper-first** until the full autonomous loop is solid and observable.
+- **5-layer adversarial pipeline** (`HardRulesGate` → `RegimeClassifier` → `DebateLayer` (BullTeam/BearTeam/Synthesizer) → `Judge` → `Execution`). No LLM dependency — all intelligence is evidence-based and regime-adaptive.
 - **Unified runtime** (`tredo-runtime`) — event-driven, multi-mode (paper / live / backtest / validate / research), with a world model, policy cache, active learner, and broker plugin system.
 - **Production broker adapters** — Alpaca (US equities/crypto) and Zerodha Kite Connect (India) with real API integration.
 
@@ -56,10 +57,16 @@ tredo uses a **two-tier hierarchical architecture** with temporal loops, a unifi
 - WebSocket server for real-time TUI updates.
 
 **Agent Layer** (`tredo-autonomous`)
-- **Identifier** group: Market scanning, intelligence, patterns, pivots, confluence, session timing, news analysis, market metrics (Bollinger, ATR, Stochastics, RSI, volume profile).
-- **Verifier** group: Risk, psychology, reflection, drawdown monitoring, overtrading prevention.
+- **5-Layer Pipeline Architecture** with priority-based conflict resolution:
+  - **Layer 1: HardRulesGate** — Runs FIRST. Enforces ALL hard rules with priority-based blocking (Critical > High > Medium > Low). Critical/High always block. Medium blocks only if no Higher override. Low = warnings only.
+  - **Layer 2: Identifier + Verifier** — Advisory only. Gathers market intelligence, risk analysis, confluence, pivots, patterns. Never blocks — the gate handled that.
+  - **Layer 3: DebateLayer** — 6 advisory agents (BullTeam: 12 factors, BearTeam: 11 factors) provide evidence + confidence. No veto power.
+  - **Layer 4: Judge/Adjudicator** — Evaluates debate quality ONLY (confidence, evidence contradiction, signal count). Does NOT re-run risk/regime/confluence checks.
+  - **Layer 5: Execution** — Autonomous level computation, adaptive position sizing, trade execution.
+- **Identifier** group: Market scanning, intelligence, patterns, pivots, confluence, session timing, news analysis, market metrics (RSI, MACD, ATR, Bollinger, Stochastic, OBV, ADX, CCI, Williams %R, VWAP).
+- **Verifier** group: Risk psychology, risk calculator, reflection. Drawdown/overtrading checks delegated to HardRulesGate.
 - **Executer** group: Strategy decision (debate-driven), portfolio management, execution coordination (FSM-based).
-- **Guardian** group: Drawdown monitoring, overtrading prevention, outcome logging.
+- **Guardian** group: Outcome logging. Drawdown/overtrading enforcement moved to HardRulesGate.
 - **MetaControl**: Learns from regret and mutates rules.
 - **New**: `DebateOrchestrator`, `AutonomousOrchestrator`, `OutcomeProcessor`, `RegimeClassifier`, `RiskGuardian`, `WalkForwardRunner`.
 

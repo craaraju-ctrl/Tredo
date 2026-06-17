@@ -93,6 +93,53 @@ pub enum RiskRecommendation {
     Halt,
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Hard Rules Gate — Priority-based rule hierarchy
+// Research shows: "The upper layer always overrides the lower layers."
+// When rules conflict, highest priority wins. Equal priority → most conservative.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Priority levels for rule conflict resolution.
+/// Critical rules can NEVER be overridden by lower layers.
+/// Variants are ordered LOW → CRITICAL so that derive(Ord) gives
+/// Critical > High > Medium > Low (higher index = higher priority).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum RulePriority {
+    Low,       // 0 — warnings only, never block
+    Medium,    // 1 — block only if no Higher rule overrides
+    High,      // 2 — always block (risk limits, circuit breakers)
+    Critical,  // 3 — never overridden (drawdown halt, session, red folder)
+}
+
+/// Result of a single hard rule check.
+#[derive(Debug, Clone)]
+pub struct RuleCheck {
+    pub passed: bool,
+    pub rule_name: String,
+    pub priority: RulePriority,
+    pub reason: String,
+}
+
+/// Complete result of the Hard Rules Gate evaluation.
+#[derive(Debug, Clone)]
+pub struct HardRulesGateResult {
+    pub passed: bool,
+    pub failed_rules: Vec<RuleCheck>,
+    pub highest_failed_priority: Option<RulePriority>,
+    pub total_rules_checked: usize,
+}
+
+impl HardRulesGateResult {
+    pub fn passed() -> Self {
+        Self {
+            passed: true,
+            failed_rules: vec![],
+            highest_failed_priority: None,
+            total_rules_checked: 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionInfo {
     pub market_open: bool,

@@ -433,8 +433,13 @@ impl Tredo {
 
     // ── Verifier dispatch ──────────────────────────────────────────────────
     /// Run the Verifier group: validates risk & psychology.
-    /// Delegates to sub-agents: drawdown, overtrading, risk_psych, risk_calc, reflector.
-    /// Note: drawdown and overtrading checks are now performed by the Guardian group.
+    /// Delegates to sub-agents: risk_psych, risk_calc, reflector.
+    ///
+    /// NOTE: Drawdown and overtrading checks are enforced by the HardRulesGate
+    /// (Layer 1), which runs BEFORE this method. The Guardian's DrawdownMonitor
+    /// and OvertradingPreventer agents are only called from the pipeline's
+    /// HardRulesGate — NOT here. This avoids redundant checks and ensures a
+    /// single source of truth for hard rules.
     ///
     /// `chain_id` is the COT chain ID from the calling pipeline, used to link
     /// per-sub-agent COT entries to the current pipeline run.
@@ -450,65 +455,8 @@ impl Tredo {
             symbol, price, equity
         );
 
-        // Run guardian checks (drawdown + overtrading) to see if we are allowed to trade
-        let (drawdown_res, overtrading_res) = tokio::join!(
-            self.guardian.drawdown.run(None),
-            self.guardian.overtrading.run(None),
-        );
-        let drawdown_ok = drawdown_res.is_ok();
-        let overtrading_ok = overtrading_res.is_ok();
-
-        self.guardian
-            .drawdown
-            .state
-            .add_cot_step(
-                chain_id,
-                "DrawdownMonitorAgent",
-                "Checking daily drawdown limits",
-                if drawdown_ok { "PASS" } else { "FAIL" },
-                if drawdown_ok {
-                    "Drawdown within safe limits"
-                } else {
-                    "Max drawdown exceeded — halting"
-                },
-                if drawdown_ok { 1.0 } else { 0.0 },
-                Some(symbol.to_string()),
-            )
-            .await;
-
-        self.guardian
-            .overtrading
-            .state
-            .add_cot_step(
-                chain_id,
-                "OvertradingPreventerAgent",
-                "Checking trade frequency",
-                if overtrading_ok { "PASS" } else { "BLOCKED" },
-                if overtrading_ok {
-                    "Trade frequency within limits"
-                } else {
-                    "Overtrading detected — blocking new trades"
-                },
-                if overtrading_ok { 1.0 } else { 0.0 },
-                Some(symbol.to_string()),
-            )
-            .await;
-
-        let discipline_ok = drawdown_ok && overtrading_ok;
-
-        if !discipline_ok {
-            println!("[Tredo::Verifier] ⚠ Guardian discipline checks failed");
-            return Ok(RiskAnalysis {
-                max_position_size: 0.0,
-                risk_per_trade_pct: 0.0,
-                risk_reward_ratio: 0.0,
-                portfolio_heat: 1.0,
-                daily_drawdown_pct: 0.0,
-                var_95: 0.0,
-                recommendation: crate::types::RiskRecommendation::Halt,
-                psychology_warnings: vec!["Discipline checks failed".to_string()],
-            });
-        }
+        // Drawdown + overtrading are already validated by HardRulesGate (Layer 1).
+        // The Verifier focuses on risk analysis (psychology, position sizing, reflection).
 
         // Run risk psychology with real equity from state
         let analysis = self

@@ -8,6 +8,9 @@ use crate::prelude::*;
 use crate::AppState;
 
 pub fn render_dashboard(f: &mut Frame, area: Rect, app: &mut AppState) {
+    // Clear clickable areas before re-rendering so stale rects don't persist
+    app.pipeline_layer_areas.clear();
+
     let status = app.status.as_ref();
 
     let equity = status
@@ -69,7 +72,7 @@ pub fn render_dashboard(f: &mut Frame, area: Rect, app: &mut AppState) {
     let now = std::time::Instant::now();
     let is_loading = status.is_none();
 
-    // ── Layout ────────────────────────────────────────────────────────────
+    // ── Layout (enhanced: 5-layer flow + agent comms + judge panel) ────────
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -80,7 +83,9 @@ pub fn render_dashboard(f: &mut Frame, area: Rect, app: &mut AppState) {
             Constraint::Length(6), // Bottom row: P&L + WIN RATE with trendlines
             Constraint::Length(1), // gap
             Constraint::Length(3), // Stats bar
-            Constraint::Length(7), // Four sparkline cards (5 inner rows for SMA+EMA+ROC)
+            Constraint::Length(7), // Four sparkline cards
+            Constraint::Length(1), // gap
+            Constraint::Min(6),   // 5-Layer Pipeline Flow + Agent Comms + Judge
         ])
         .split(area);
 
@@ -164,6 +169,376 @@ pub fn render_dashboard(f: &mut Frame, area: Rect, app: &mut AppState) {
     // Loss Streak — SMA-3, SMA-5
     render_sparkline_with_sma(f, sparkline_row[3], loss_streak_history, "Loss Streak",
         false, &[3, 5], &[], None, false);
+
+    // ── 5-Layer Pipeline Flow + Agent Comms + Judge Panel ────────────────
+    let bottom_section = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Ratio(2, 5), // 5-Layer Flow
+            Constraint::Ratio(2, 5), // Agent Communication
+            Constraint::Ratio(1, 5), // Judge Decision
+        ])
+        .split(chunks[9]);
+
+    render_pipeline_flow(f, bottom_section[0], app);
+    render_agent_comms(f, bottom_section[1], app);
+    render_judge_panel(f, bottom_section[2], app);
+}
+
+// ── 5-Layer Pipeline Flow Visualization ─────────────────────────────────────
+
+/// Render the 5-layer pipeline flow as a horizontal diagram with status indicators.
+/// Each layer shows its name, status, and a brief description.
+fn render_pipeline_flow(f: &mut Frame, area: Rect, app: &mut AppState) {
+    let block = Block::default()
+        .title(Span::styled(
+            "⚙️ 5-LAYER PIPELINE",
+            Style::default()
+                .fg(THEME.brand)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(THEME.border));
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    // Determine layer statuses from latest COT entries
+    let cot = &app.cot;
+    let layer_statuses = determine_layer_statuses(cot);
+
+    let layer_data = vec![
+        ("L1", "Gate", "Rules", layer_statuses[0]),
+        ("L2", "Ident", "Data", layer_statuses[1]),
+        ("L3", "Debate", "12v11", layer_statuses[2]),
+        ("L4", "Judge", "Quality", layer_statuses[3]),
+        ("L5", "Exec", "Trade", layer_statuses[4]),
+    ];
+
+    // Layout: 5 layer boxes with arrows between them
+    let mut constraints = Vec::new();
+    for i in 0..5 {
+        constraints.push(Constraint::Ratio(1, 9));
+        if i < 4 {
+            constraints.push(Constraint::Length(3)); // arrow gap
+        }
+    }
+
+    let flow_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(constraints)
+        .split(inner);
+
+    for (i, (id, name, desc, status)) in layer_data.iter().copied().enumerate() {
+        let (color, status_text) = match status {
+            LayerStatus::Passed => (THEME.positive, "● PASS"),
+            LayerStatus::Blocked => (THEME.negative, "● BLOCK"),
+            LayerStatus::Running => (THEME.warning, "◌ RUN"),
+            LayerStatus::Skipped => (THEME.muted, "○ SKIP"),
+            LayerStatus::Pending => (THEME.muted, "○ WAIT"),
+        };
+
+        let layer_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(color));
+        let layer_inner = layer_block.inner(flow_chunks[i * 2]);
+        f.render_widget(layer_block, flow_chunks[i * 2]);
+
+        let lines = vec![
+            Line::from(Span::styled(
+                format!("{} {}", id, name),
+                Style::default()
+                    .fg(color)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled(
+                status_text,
+                Style::default().fg(color),
+            )),
+            Line::from(Span::styled(
+                desc,
+                Style::default().fg(THEME.muted),
+            )),
+        ];
+        let p = Paragraph::new(lines).alignment(Alignment::Center);
+        f.render_widget(p, layer_inner);
+
+        // Store clickable area for mouse navigation
+        app.pipeline_layer_areas.push(flow_chunks[i * 2]);
+
+        // Render arrow between layers
+        if i < 4 {
+            let arrow = Paragraph::new(Line::from(Span::styled(
+                " → ",
+                Style::default().fg(THEME.highlight),
+            )))
+            .alignment(Alignment::Center);
+            f.render_widget(arrow, flow_chunks[i * 2 + 1]);
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum LayerStatus {
+    Passed,
+    Blocked,
+    Running,
+    Skipped,
+    Pending,
+}
+
+/// Determine the status of each pipeline layer from COT entries.
+fn determine_layer_statuses(cot: &[serde_json::Value]) -> [LayerStatus; 5] {
+    let mut statuses = [LayerStatus::Pending; 5];
+
+    // Look at the most recent COT entries to determine layer statuses
+    for entry in cot.iter().rev().take(20) {
+        let agent = entry.get("agent").and_then(|a| a.as_str()).unwrap_or("");
+        let action = entry.get("action").and_then(|a| a.as_str()).unwrap_or("");
+
+        match agent {
+            a if a.contains("HardRules") || a.contains("Gate") => {
+                if statuses[0] == LayerStatus::Pending {
+                    statuses[0] = if action == "BLOCKED" || action == "REJECT" {
+                        LayerStatus::Blocked
+                    } else if action == "PASSED" || action == "PASS" {
+                        LayerStatus::Passed
+                    } else {
+                        LayerStatus::Running
+                    };
+                }
+            }
+            a if a.contains("Identifier") || a.contains("Verifier") => {
+                if statuses[1] == LayerStatus::Pending {
+                    statuses[1] = if action == "ANALYZED" || action == "PASS" {
+                        LayerStatus::Passed
+                    } else if action == "SKIP" {
+                        LayerStatus::Skipped
+                    } else {
+                        LayerStatus::Running
+                    };
+                }
+            }
+            a if a.contains("Debate") => {
+                if statuses[2] == LayerStatus::Pending {
+                    statuses[2] = if action == "BUY" || action == "SELL" || action == "HOLD" {
+                        LayerStatus::Passed
+                    } else {
+                        LayerStatus::Running
+                    };
+                }
+            }
+            a if a.contains("Judge") => {
+                if statuses[3] == LayerStatus::Pending {
+                    statuses[3] = if action == "APPROVE" {
+                        LayerStatus::Passed
+                    } else if action == "VETO" {
+                        LayerStatus::Blocked
+                    } else {
+                        LayerStatus::Running
+                    };
+                }
+            }
+            a if a.contains("Execution") || a.contains("Exec") => {
+                if statuses[4] == LayerStatus::Pending {
+                    statuses[4] = if action == "EXECUTED" {
+                        LayerStatus::Passed
+                    } else if action == "HOLD" {
+                        LayerStatus::Skipped
+                    } else {
+                        LayerStatus::Running
+                    };
+                }
+            }
+            _ => {}
+        }
+    }
+
+    statuses
+}
+
+// ── Agent Communication Panel ───────────────────────────────────────────────
+
+/// Render a panel showing recent agent-to-agent messages from the COT log.
+fn render_agent_comms(f: &mut Frame, area: Rect, app: &AppState) {
+    let block = Block::default()
+        .title(Span::styled(
+            "💬 AGENT COMMUNICATIONS",
+            Style::default()
+                .fg(THEME.info)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(THEME.border));
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let mut lines = vec![];
+
+    // Show the last 12 COT entries (most recent first)
+    let recent: Vec<_> = app.cot.iter().rev().take(12).collect();
+
+    if recent.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  Waiting for agent communications...",
+            Style::default().fg(THEME.muted),
+        )));
+    } else {
+        for entry in &recent {
+            let agent = entry
+                .get("agent")
+                .and_then(|a| a.as_str())
+                .unwrap_or("?");
+            let action = entry
+                .get("action")
+                .and_then(|a| a.as_str())
+                .unwrap_or("?");
+            let message = entry
+                .get("message")
+                .or_else(|| entry.get("input"))
+                .and_then(|m| m.as_str())
+                .unwrap_or("");
+
+            let agent_color = match action {
+                "PASS" | "PASSED" | "APPROVE" | "EXECUTED" | "ANALYZED" => THEME.positive,
+                "BLOCKED" | "REJECT" | "VETO" => THEME.negative,
+                "HOLD" | "SKIP" => THEME.muted,
+                "INFO" => THEME.info,
+                _ => THEME.highlight,
+            };
+
+            // Truncate message to fit
+            let max_msg_len = inner.width.saturating_sub(20) as usize;
+            let truncated_msg = if message.len() > max_msg_len {
+                format!("{}...", &message[..max_msg_len.saturating_sub(3)])
+            } else {
+                message.to_string()
+            };
+
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  {:<10}", agent),
+                    Style::default()
+                        .fg(agent_color)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!(" {:<8}", action),
+                    Style::default().fg(agent_color),
+                ),
+                Span::styled(
+                    truncated_msg,
+                    Style::default().fg(THEME.muted),
+                ),
+            ]));
+        }
+    }
+
+    let p = Paragraph::new(lines).wrap(Wrap { trim: true });
+    f.render_widget(p, inner);
+}
+
+// ── Judge Decision Panel ────────────────────────────────────────────────────
+
+/// Render a panel showing the latest judge decision with scores and reasoning.
+fn render_judge_panel(f: &mut Frame, area: Rect, app: &AppState) {
+    let block = Block::default()
+        .title(Span::styled(
+            "⚖️ JUDGE",
+            Style::default()
+                .fg(THEME.warning)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(THEME.border));
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    // Find the latest Judge COT entry
+    let judge_entry = app.cot.iter().rev().find(|e| {
+        e.get("agent")
+            .and_then(|a| a.as_str())
+            .map(|a| a.contains("Judge") || a.contains("DebateLayer"))
+            .unwrap_or(false)
+    });
+
+    let mut lines = vec![];
+
+    if let Some(entry) = judge_entry {
+        let action = entry
+            .get("action")
+            .and_then(|a| a.as_str())
+            .unwrap_or("?");
+        let message = entry
+            .get("message")
+            .or_else(|| entry.get("input"))
+            .and_then(|m| m.as_str())
+            .unwrap_or("");
+        let confidence = entry.get("confidence").and_then(|c| c.as_f64());
+
+        let action_color = match action {
+            "BUY" | "SELL" => THEME.positive,
+            "HOLD" => THEME.muted,
+            "VETO" => THEME.negative,
+            _ => THEME.highlight,
+        };
+
+        lines.push(Line::from(Span::styled(
+            "  Verdict:",
+            Style::default().fg(THEME.muted),
+        )));
+        lines.push(Line::from(Span::styled(
+            format!("    {}", action),
+            Style::default()
+                .fg(action_color)
+                .add_modifier(Modifier::BOLD),
+        )));
+
+        if let Some(conf) = confidence {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled(
+                    "  Confidence: ",
+                    Style::default().fg(THEME.muted),
+                ),
+                Span::styled(
+                    format!("{:.0}%", conf * 100.0),
+                    Style::default().fg(THEME.highlight),
+                ),
+            ]));
+        }
+
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "  Reasoning:",
+            Style::default().fg(THEME.muted),
+        )));
+        // Truncate reasoning to fit panel
+        let max_reason_len = inner.width.saturating_sub(4) as usize;
+        let truncated = if message.len() > max_reason_len {
+            format!("{}...", &message[..max_reason_len.saturating_sub(3)])
+        } else {
+            message.to_string()
+        };
+        lines.push(Line::from(Span::styled(
+            format!("    {}", truncated),
+            Style::default().fg(THEME.highlight),
+        )));
+    } else {
+        lines.push(Line::from(Span::styled(
+            "  No judge decision yet.",
+            Style::default().fg(THEME.muted),
+        )));
+        lines.push(Line::from(Span::styled(
+            "  Waiting for debate...",
+            Style::default().fg(THEME.muted),
+        )));
+    }
+
+    let p = Paragraph::new(lines).wrap(Wrap { trim: true });
+    f.render_widget(p, inner);
 }
 
 // ── Helper Functions ────────────────────────────────────────────────────────

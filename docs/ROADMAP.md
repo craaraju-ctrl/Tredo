@@ -322,6 +322,7 @@ flowchart TB
 | 7: Production | ✅ Complete | Docker Deployment, 8GB RAM Optimization | Q1 2025 |
 | 8: Evolution | ✅ Complete | Episodic Memory, Patterns, Live COT UI | Q2 2025 |
 | 9: Production Runtime | ✅ Complete | Unified runtime, policy cache, world model, broker adapters, active learner | Q2 2026 |
-| C: Debate + Skills/Rules + TUI | ✅ Complete (100%) | Full debate + Strong Skills (AgentSkill) + Rules (memory-adjusted) + Hierarchical Trained Memory (self-understanding in all agents + subs) + TUI Agent Tree with skill scores + per-sub-agent COT | 2026-06-15 |
+| C: Debate + Skills/Rules + TUI | ✅ Complete (100%) | Full debate + Strong Skills (AgentSkill) + Rules (memory-adjusted) + Hierarchical Trained Memory + TUI Agent Tree | 2026-06-15 |
+| D: 5-Layer Pipeline | ✅ Complete (100%) | HardRulesGate (12 rules, priority-based blocking), 5-layer architecture, BullTeam 12f vs BearTeam 11f with OBV/ADX/CCI/WilliamsR/VWAP, advisory-only agents, Judge quality-only | 2026-06-18 |
 
 > **Goal:** A stable, low-resource, high-discipline autonomous trading system that feels like a professional trading team.

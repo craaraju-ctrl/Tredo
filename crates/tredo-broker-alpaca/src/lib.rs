@@ -25,7 +25,6 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tokio::sync::RwLock;
 use tredo_core::paper_engine::{
     BrokerAdapter, ClosedTrade, CloseReason, OrderRequest, OrderStatus, OrderType,
     PortfolioSummary, Position, PositionStatus, RiskCheckResult, TradingMode,
@@ -58,6 +57,7 @@ pub enum AlpacaError {
 /// Account information response from `GET /v2/account`.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct AlpacaAccount {
     id: String,
     status: String,
@@ -90,6 +90,7 @@ struct AlpacaAccount {
 /// Position response from `GET /v2/positions`.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct AlpacaPosition {
     symbol: String,
     qty: String,
@@ -110,6 +111,7 @@ struct AlpacaPosition {
 /// Order response from Alpaca.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct AlpacaOrder {
     id: String,
     client_order_id: String,
@@ -148,6 +150,7 @@ struct AlpacaOrder {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct AlpacaOrderLeg {
     id: String,
     side: String,
@@ -354,7 +357,7 @@ impl AlpacaBroker {
     }
 
     /// Map Alpaca order status to TREDO OrderStatus.
-    fn parse_order_status(alpaca_status: &str, filled_qty: i32, total_qty: i32) -> OrderStatus {
+    fn parse_order_status(alpaca_status: &str, filled_qty: i32, _total_qty: i32) -> OrderStatus {
         match alpaca_status.to_lowercase().as_str() {
             "new" | "accepted" | "pending_new" | "accepted_for_bidding" => OrderStatus::Pending,
             "partially_filled" => OrderStatus::PartiallyFilled { filled_qty },
@@ -509,7 +512,7 @@ impl BrokerAdapter for AlpacaBroker {
 
         let cash = Self::parse_f64(&account.cash);
         let portfolio_value = Self::parse_f64(&account.portfolio_value);
-        let buying_power = Self::parse_f64(&account.buying_power);
+        let _buying_power = Self::parse_f64(&account.buying_power);
         let equity = Self::parse_f64(&account.equity.as_deref().unwrap_or("0"));
 
         // Get positions for P&L
@@ -557,9 +560,9 @@ impl BrokerAdapter for AlpacaBroker {
 
         let status = order.status.as_str();
         let filled_qty = Self::parse_qty(&order.filled_qty);
-        let total_qty = Self::parse_qty(&order.qty);
+        let _total_qty = Self::parse_qty(&order.qty);
 
-        Ok(Self::parse_order_status(status, filled_qty, total_qty))
+        Ok(Self::parse_order_status(status, filled_qty, _total_qty))
     }
 
     async fn get_recent_trades(&self, limit: usize) -> Result<Vec<ClosedTrade>, String> {

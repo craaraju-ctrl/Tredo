@@ -6,9 +6,13 @@
 // No price points given to agent — meter only provides perception data; agent decides everything.
 
 use crate::helpers::{
-    compute_atr, compute_bollinger_bands, compute_macd, compute_relative_volume, compute_rsi,
-    compute_stochastic,
+    compute_adx, compute_atr, compute_bollinger_bands, compute_cci, compute_macd,
+    compute_obv, compute_relative_volume, compute_rsi, compute_stochastic, compute_vwap,
+    compute_williams_r,
 };
+
+fn default_50() -> f64 { 50.0 }
+fn default_neg50() -> f64 { -50.0 }
 use crate::state::SharedState;
 use async_trait::async_trait;
 use chrono::Utc;
@@ -28,12 +32,29 @@ pub struct MetricsSnapshot {
     pub stoch_k: f64,
     pub rel_volume: f64,
     pub volatility_20: f64,
-    pub regime_hint: String, // "trending_bull" | "ranging" | "volatile" etc (from local + optional macro)
-    pub fib_382: f64,        // simple retracement levels relative to recent swing
+    pub regime_hint: String,
+    pub fib_382: f64,
     pub fib_618: f64,
-    pub confluence_hint: f64, // 0-1 derived technical confluence (oversold+vol+regime)
+    pub confluence_hint: f64,
     pub last_updated: chrono::DateTime<Utc>,
-    pub sources: Vec<String>, // "local_ohlcv", "finnhub", "coingecko", "fred"...
+    pub sources: Vec<String>,
+    // === NEW INDICATORS (5 additional independent signals) ===
+    #[serde(default)]
+    pub obv_direction: f64,   // OBV trend: >0 bullish, <0 bearish
+    #[serde(default)]
+    pub adx: f64,              // ADX trend strength (0-100)
+    #[serde(default = "default_50")]
+    pub plus_di: f64,          // +DI directional indicator
+    #[serde(default = "default_50")]
+    pub minus_di: f64,         // -DI directional indicator
+    #[serde(default)]
+    pub cci: f64,              // Commodity Channel Index (-∞ to +∞)
+    #[serde(default = "default_neg50")]
+    pub williams_r: f64,       // Williams %R (-100 to 0)
+    #[serde(default)]
+    pub vwap: f64,             // Volume Weighted Average Price
+    #[serde(default)]
+    pub vwap_deviation: f64,   // (price - vwap) / vwap
 }
 
 impl Default for MetricsSnapshot {
@@ -55,6 +76,14 @@ impl Default for MetricsSnapshot {
             confluence_hint: 0.5,
             last_updated: Utc::now(),
             sources: vec!["local".into()],
+            obv_direction: 0.0,
+            adx: 25.0,
+            plus_di: 50.0,
+            minus_di: 50.0,
+            cci: 0.0,
+            williams_r: -50.0,
+            vwap: 0.0,
+            vwap_deviation: 0.0,
         }
     }
 }
@@ -181,13 +210,36 @@ impl MarketMetricsMeter {
             snap.sources.push("fred_macro".into());
         }
 
-        // Connect to memory: persist a compact snapshot for vector recall (agent remembers "when RSI was 28 + high rel vol, what I did")
-        // Best effort (the vector store is in state; episodes for closed trades capture full context via OutcomeProcessor)
-        let _recall_str = format!(
-            "metrics_meter {} rsi={:.1} macd_hist={:.3} atr={:.2}% vol20={:.2}% regime={} conf={:.2} relvol={:.1}",
-            symbol, snap.rsi_14, snap.macd_hist, snap.atr_pct*100.0, snap.volatility_20*100.0, snap.regime_hint, snap.confluence_hint, snap.rel_volume
-        );
-        // Store happens via existing recall_trained_memory / MI paths; we log for visibility.
+        // === NEW INDICATORS: 5 additional independent signals ===
+        let (obv_raw, obv_dir) = compute_obv(&bars);
+        println!("[MetricsMeter] {} OBV raw={:.0} dir={:.3}", symbol, obv_raw, obv_dir);
+        snap.obv_direction = obv_dir;
+        let (adx, plus_di, minus_di) = compute_adx(&bars, 14);
+        snap.adx = adx;
+        snap.plus_di = plus_di;
+        snap.minus_di = minus_di;
+        snap.cci = compute_cci(&bars, 20);
+        snap.williams_r = compute_williams_r(&bars, 14);
+        let (vwap, vwap_dev) = compute_vwap(&bars);
+        snap.vwap = vwap;
+        snap.vwap_deviation = vwap_dev;
+
+        // Boost confluence if new indicators agree with existing signals
+        // ADX > 25 confirms trend (adds precision in trending markets)
+        if adx > 25.0 && ((plus_di > minus_di && rsi > 45.0) || (minus_di > plus_di && rsi < 55.0)) {
+            snap.confluence_hint = (snap.confluence_hint + 0.05).min(0.95);
+        }
+        // OBV direction confirms price trend
+        if (obv_dir > 0.0 && mac > 0.0) || (obv_dir < 0.0 && mac < 0.0) {
+            snap.confluence_hint = (snap.confluence_hint + 0.04).min(0.95);
+        }
+        // VWAP deviation confirms direction
+        if vwap_dev > 0.002 && rsi > 50.0 {
+            snap.confluence_hint = (snap.confluence_hint + 0.03).min(0.95);
+        } else if vwap_dev < -0.002 && rsi < 50.0 {
+            snap.confluence_hint = (snap.confluence_hint + 0.03).min(0.95);
+        }
+
         println!("[MetricsMeter] {} computed (sources:{:?}) conf={:.2} — ready for aggregator + autonomous_levels + memory", symbol, snap.sources, snap.confluence_hint);
 
         snap

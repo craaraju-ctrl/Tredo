@@ -582,8 +582,10 @@ impl PaperEngine {
             order_id: pos.order_id.clone(),
         };
 
-        // Update portfolio stats
-        portfolio.cash += exit_price * pos.qty as f64 + net_pnl;
+        // Update portfolio stats: credit the sale proceeds minus exit commission.
+        // The entry cost was already deducted on buy, so P&L is implicit in the
+        // difference between entry_cost (deducted) and exit_proceeds (credited).
+        portfolio.cash += exit_price * pos.qty as f64 - commission;
         portfolio.daily_pnl += net_pnl;
         portfolio.total_trades += 1;
 
@@ -640,13 +642,15 @@ impl PaperEngine {
     }
 
     async fn recalculate_equity(&self, portfolio: &mut Portfolio) {
-        let mut total_unrealized_pnl = 0.0;
-        for pos in &portfolio.positions {
-            let (upnl, _) =
-                Self::calculate_pnl(pos.direction, pos.entry_price, pos.current_price, pos.qty);
-            total_unrealized_pnl += upnl;
-        }
-        portfolio.equity = portfolio.cash + total_unrealized_pnl;
+        // Equity = cash + current market value of all open positions.
+        // We use market value (current_price * qty), NOT unrealized P&L,
+        // because cash already has the entry cost deducted.
+        let total_market_value: f64 = portfolio
+            .positions
+            .iter()
+            .map(|pos| pos.current_price * pos.qty as f64)
+            .sum();
+        portfolio.equity = portfolio.cash + total_market_value;
     }
 
     // ── Risk Checks ───────────────────────────────────────────────────────

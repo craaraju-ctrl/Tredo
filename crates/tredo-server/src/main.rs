@@ -387,6 +387,95 @@ async fn handle_get_status(
     })))
 }
 
+// ── Health Check ─────────────────────────────────────────────────────────────
+
+async fn handle_health(
+    State(state): State<Arc<AppState>>,
+) -> Json<ApiResponse<serde_json::Value>> {
+    let mode = state.registry.current_mode().await;
+    let broker_name = state.registry.current_broker_name().await;
+    let summary = state.registry.active_broker().await.get_summary().await.ok();
+
+    Json(ApiResponse::ok(serde_json::json!({
+        "status": "ok",
+        "mode": mode.to_string(),
+        "broker": broker_name,
+        "open_positions": summary.as_ref().map_or(0, |s| s.open_positions),
+    })))
+}
+
+// ── Backtest Results ─────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+struct BacktestResult {
+    symbol: String,
+    total_trades: u32,
+    winning_trades: u32,
+    losing_trades: u32,
+    win_rate: f64,
+    total_pnl: f64,
+    max_drawdown_pct: f64,
+}
+
+async fn handle_backtest_results(
+    State(state): State<Arc<AppState>>,
+) -> Json<ApiResponse<Vec<BacktestResult>>> {
+    let broker = state.registry.active_broker().await;
+    let trades = broker.get_recent_trades(500).await.unwrap_or_default();
+
+    // Group by symbol and compute stats
+    let mut by_symbol: std::collections::HashMap<String, Vec<&ClosedTrade>> =
+        std::collections::HashMap::new();
+    for trade in &trades {
+        by_symbol.entry(trade.symbol.clone()).or_default().push(trade);
+    }
+
+    let results: Vec<BacktestResult> = by_symbol
+        .iter()
+        .map(|(symbol, symbol_trades)| {
+            let total = symbol_trades.len() as u32;
+            let winning = symbol_trades.iter().filter(|t| t.realized_pnl > 0.0).count() as u32;
+            let losing = total - winning;
+            let win_rate = if total > 0 {
+                winning as f64 / total as f64 * 100.0
+            } else {
+                0.0
+            };
+            let total_pnl: f64 = symbol_trades.iter().map(|t| t.realized_pnl).sum();
+
+            // Compute max drawdown from cumulative P&L (oldest to newest)
+            let mut cum_pnl = 0.0;
+            let mut peak = 0.0_f64;
+            let mut max_dd_pct = 0.0;
+            for trade in symbol_trades.iter().rev() {
+                cum_pnl += trade.realized_pnl;
+                if cum_pnl > peak {
+                    peak = cum_pnl;
+                }
+                let dd = peak - cum_pnl;
+                if peak > 0.0 {
+                    let dd_pct = dd / peak * 100.0;
+                    if dd_pct > max_dd_pct {
+                        max_dd_pct = dd_pct;
+                    }
+                }
+            }
+
+            BacktestResult {
+                symbol: symbol.clone(),
+                total_trades: total,
+                winning_trades: winning,
+                losing_trades: losing,
+                win_rate,
+                total_pnl,
+                max_drawdown_pct: max_dd_pct,
+            }
+        })
+        .collect();
+
+    Json(ApiResponse::ok(results))
+}
+
 // ── WebSocket ────────────────────────────────────────────────────────────────
 
 async fn handle_ws(State(state): State<Arc<AppState>>, ws: WebSocketUpgrade) -> impl IntoResponse {
@@ -469,6 +558,8 @@ async fn main() {
         .route("/api/reset", post(handle_reset))
         .route("/api/mode", get(handle_get_mode).post(handle_set_mode))
         .route("/api/status", get(handle_get_status))
+        .route("/api/health", get(handle_health))
+        .route("/api/backtest/results", get(handle_backtest_results))
         .route("/api/broker/config", post(handle_broker_config))
         .route("/api/broker/test", post(handle_broker_test))
         .route("/ws", get(handle_ws))

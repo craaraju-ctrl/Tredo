@@ -1,6 +1,6 @@
 use crate::types::{PipelineSummary, TradeSignal};
 use std::error::Error;
-use tredo_core::TradeDirection;
+use tredo_core::{Agent, TradeDirection};
 
 // NOTE: These phase methods are preserved for backward API compatibility.
 // The pipeline now routes through Tredo groups (see tredo.rs) instead.
@@ -51,14 +51,21 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
         Ok(true)
     }
 
-    /// Full autonomous pipeline: routes through Tredo groups (Identifier → Verifier → Executer).
-    /// Pushes real chain-of-thought entries into SharedState.cot_store.
-    /// Fully agentic pipeline (no external price points or direction).
-    /// The agent observes latest market data from state (populated by the data feed / scanner).
-    /// It uses its skills (patterns, volume, RSI, MACD, ATR, pivots, regime, confluence, memory recall)
-    ///   + debate + DisciplinedCore rules to decide *if*, *direction*, and the precise levels.
+    /// Full autonomous pipeline with proper 5-layer hierarchy:
     ///
-    ///   This is the definition of agentic AI trading vs a bot that is told the levels.
+    /// ```text
+    /// Phase 0: Position check
+    /// Layer 1: HardRulesGate (ALL hard rules — NEVER overridden)
+    /// Layer 2: Identifier (data gathering, COT entries, confluence/pivots)
+    ///         Verifier (risk analysis, position sizing — advisory)
+    /// Layer 3: DebateLayer (advisory — 6 agents, no veto power)
+    /// Layer 4: Judge (final adjudication — only evaluates debate quality)
+    /// Layer 5: Execute
+    /// ```
+    ///
+    /// Key principle: HardRulesGate runs FIRST. If it blocks, no agents run.
+    /// Identifier/Verifier gather data but never block — the gate already handled hard rules.
+    /// Debate agents are ADVISORY only — only the Judge has decision-making power.
     pub async fn run_full_pipeline(
         &self,
         symbol: &str,
@@ -68,9 +75,8 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
             "\n=== tredo AUTONOMOUS (AGENTIC) PIPELINE for {} ===",
             symbol
         );
-        let tredo = self.tredo();
 
-        // Agent perceives the current market price from its state (real-time data feed populates ohlcv_history)
+        // Agent perceives the current market price from its state
         let observed_price = {
             let history = self.state.ohlcv_history.read().await;
             history
@@ -104,7 +110,7 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
             )
             .await;
 
-        // Phase 0 — Check if there is already an open position on this symbol
+        // ── Phase 0: Check if there is already an open position on this symbol ──
         {
             let portfolio = self.state.portfolio.read().await;
             if portfolio
@@ -114,13 +120,9 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
             {
                 self.state
                     .add_cot_step(
-                        chain_id,
-                        "Phase0",
-                        "Checking existing positions",
-                        "SKIP",
+                        chain_id, "Phase0", "Checking existing positions", "SKIP",
                         &format!("Already have an open position for {}", symbol),
-                        1.0,
-                        Some(symbol.to_string()),
+                        1.0, Some(symbol.to_string()),
                     )
                     .await;
                 return Ok(PipelineSummary {
@@ -134,53 +136,30 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
         }
         self.state
             .add_cot_step(
-                chain_id,
-                "Phase0",
-                "Checking existing positions",
-                "PASS",
+                chain_id, "Phase0", "Checking existing positions", "PASS",
                 "No existing position — proceeding",
-                1.0,
-                Some(symbol.to_string()),
+                1.0, Some(symbol.to_string()),
             )
             .await;
 
-        // Get latest observed price from state (agent perceives the market itself)
-        let _latest_price = {
-            let history = self.state.ohlcv_history.read().await;
-            history
-                .get(symbol)
-                .and_then(|bars| bars.last().map(|b| b.close))
-                .unwrap_or(0.0) // fallback only for bootstrap; will be caught by the <=0 check above
-        };
+        // ═══ LAYER 1: HARD RULES GATE (runs FIRST — no agents run if this fails) ═══
+        // Single top-level enforcement of ALL hard rules with priority-based conflict resolution.
+        // Critical/High rules block trading. Medium rules block if no Higher rule overrides.
+        // Low-priority failures are WARNINGS only — they log but don't block.
+        let hard_rules = crate::hard_rules_gate::HardRulesGate::new(self.state.clone());
+        let gate_result = hard_rules.evaluate(symbol).await;
 
-        // ── IDENTIFIER GROUP ─────────────────────────────────────────────────
-        // Runs market analysis + session timer + red folder checks.
-        // Agent observes latest data and computes its own indicators (trend, patterns, volume, RSI, MACD etc. via skills).
-        let (discipline_ok, confluence, pivots) = tredo
-            .run_identifier(symbol, observed_price, chain_id)
-            .await?;
-
-        if !discipline_ok {
+        if !gate_result.passed {
             self.state
                 .add_cot_step(
-                    chain_id,
-                    "Identifier",
-                    &format!("Discipline checks for {}", symbol),
-                    "FAIL",
-                    "Session timing or red folder check failed",
-                    0.1,
-                    Some(symbol.to_string()),
-                )
-                .await;
-            self.state
-                .add_cot_step(
-                    chain_id,
-                    "Decision",
-                    "Pipeline aborted",
-                    "ABORT",
-                    "Discipline checks failed — halting",
-                    0.0,
-                    Some(symbol.to_string()),
+                    chain_id, "HardRulesGate",
+                    &format!("Hard rules check for {} ({} rules checked)", symbol, gate_result.total_rules_checked),
+                    "BLOCKED",
+                    &format!("Highest priority: {:?}. Failed rules: {}",
+                        gate_result.highest_failed_priority.unwrap_or(crate::types::RulePriority::Low),
+                        gate_result.failed_rules.iter().map(|r| r.rule_name.as_str()).collect::<Vec<_>>().join(", ")
+                    ),
+                    0.0, Some(symbol.to_string()),
                 )
                 .await;
             return Ok(PipelineSummary {
@@ -188,32 +167,60 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
                 phase_results: vec![],
                 total_duration_ms: start.elapsed().as_millis() as u64,
                 final_signal: None,
-                reason: "Discipline checks failed (session/red_folder)".to_string(),
+                reason: format!("Hard Rules Gate blocked: {} (priority {:?})",
+                    gate_result.failed_rules.first().map(|r| r.reason.as_str()).unwrap_or("unknown"),
+                    gate_result.highest_failed_priority
+                ),
             });
         }
 
         self.state
             .add_cot_step(
-                chain_id,
-                "Identifier",
-                &format!("Market analysis for {} @ {:.2} (agent observed)", symbol, observed_price),
-                "ANALYZED",
-                &format!(
-                    "Confluence: {:.1}%, Pivot: {:.2}, R1: {:.2}, S1: {:.2}, Discipline: OK (agent observed price {:.2})",
-                    confluence * 100.0,
-                    pivots.pivot,
-                    pivots.r1,
-                    pivots.s1,
-                    observed_price
-                ),
-                confluence,
-                Some(symbol.to_string()),
+                chain_id, "HardRulesGate",
+                &format!("Hard rules check for {} ({} rules checked)", symbol, gate_result.total_rules_checked),
+                "PASSED",
+                &format!("All {} hard rules passed", gate_result.total_rules_checked),
+                1.0, Some(symbol.to_string()),
             )
             .await;
 
-        // ── VERIFIER GROUP ───────────────────────────────────────────────────
-        // Runs drawdown + overtrading checks + risk psychology + reflection.
-        // Agent uses its own computed market state (no external levels).
+        // ═══ LAYER 2: IDENTIFIER (data gathering — advisory only, never blocks) ═══════
+        // Runs all 7 sub-agents to gather market intelligence.
+        // Session/red_folder checks are now informational COT entries only —
+        // the HardRulesGate already enforced these as Critical rules.
+        let tredo = self.tredo();
+        let (discipline_ok, confluence, pivots) = tredo
+            .run_identifier(symbol, observed_price, chain_id)
+            .await?;
+
+        // Log discipline status as informational (gate already handled blocking)
+        if !discipline_ok {
+            self.state
+                .add_cot_step(
+                    chain_id, "Identifier", &format!("Discipline checks for {} (informational)", symbol),
+                    "INFO",
+                    "Session/red_folder check flagged — already enforced by HardRulesGate",
+                    0.8, Some(symbol.to_string()),
+                )
+                .await;
+        }
+
+        self.state
+            .add_cot_step(
+                chain_id, "Identifier",
+                &format!("Market analysis for {} @ {:.2}", symbol, observed_price),
+                "ANALYZED",
+                &format!(
+                    "Confluence: {:.1}%, Pivot: {:.2}, R1: {:.2}, S1: {:.2}",
+                    confluence * 100.0, pivots.pivot, pivots.r1, pivots.s1
+                ),
+                confluence, Some(symbol.to_string()),
+            )
+            .await;
+
+        // ═══ LAYER 2: VERIFIER (risk analysis — advisory only, never blocks) ═════════
+        // Runs risk psychology, risk calculator, reflector.
+        // Drawdown/overtrading checks are informational — the HardRulesGate enforced these.
         let equity = {
             let portfolio = self.state.portfolio.read().await;
             portfolio.total_equity
@@ -221,149 +228,169 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
         let risk = tredo
             .run_verifier(symbol, observed_price, equity, chain_id)
             .await?;
-        let risk_passed = risk.recommendation != crate::types::RiskRecommendation::Halt;
 
+        // Log risk status as informational (gate already handled blocking)
         self.state
             .add_cot_step(
-                chain_id,
-                "Verifier",
-                &format!(
-                    "Risk assessment for {} (observed price {:.2})",
-                    symbol, observed_price
-                ),
-                if risk_passed { "PASS" } else { "HALT" },
+                chain_id, "Verifier",
+                &format!("Risk assessment for {} (observed price {:.2})", symbol, observed_price),
+                "ANALYZED",
                 &format!(
                     "Heat: {:.1}%, DD: {:.1}%, Recommendation: {:?}",
-                    risk.portfolio_heat * 100.0,
-                    risk.daily_drawdown_pct * 100.0,
-                    risk.recommendation
+                    risk.portfolio_heat * 100.0, risk.daily_drawdown_pct * 100.0, risk.recommendation
                 ),
-                (1.0 - risk.portfolio_heat).max(0.0),
-                Some(symbol.to_string()),
+                (1.0 - risk.portfolio_heat).max(0.0), Some(symbol.to_string()),
             )
             .await;
 
-        if !risk_passed {
-            self.state
-                .add_cot_step(
-                    chain_id,
-                    "Decision",
-                    "Pipeline aborted",
-                    "ABORT",
-                    "Risk assessment: HALT",
-                    0.0,
-                    Some(symbol.to_string()),
-                )
-                .await;
-            return Ok(PipelineSummary {
-                executed: false,
-                phase_results: vec![],
-                total_duration_ms: start.elapsed().as_millis() as u64,
-                final_signal: None,
-                reason: "Risk assessment: HALT".to_string(),
-            });
-        }
+        // ═══ PRECISION GATE: Regime Consistency Check ═══════════════════════════
+        // Lightweight spot-check on first trade of day: verify recent price action
+        // is consistent with the declared regime.
+        {
+            let portfolio = self.state.portfolio.read().await;
+            let total_trades = portfolio.total_trades_today;
+            drop(portfolio);
 
-        // === EXPLICIT AGGREGATOR + DECISION HANDOFF (Gap 1 blueprint) ===
-        // 1. MarketIntelligence has already run and stored last_aggregated_signal + last_skill_votes.
-        // 2. We now pull the AggregatedSignal and pass it as a first-class parameter into the decision layer.
-        // This is the critical missing link that turns "skills thinking aloud" into the agent actually
-        // using its own cross-skill consensus when choosing to trade and at what levels.
-        let aggregated_signal = {
-            let agg = self.state.last_aggregated_signal.read().await;
-            agg.clone()
-        };
+            if total_trades == 0 {
+                let bars = {
+                    let hist = self.state.ohlcv_history.read().await;
+                    hist.get(symbol).cloned().unwrap_or_default()
+                };
 
-        // The agent decides direction + its own entry/SL/TP using the aggregated signal.
-        // We deliberately do *not* pass pre-computed entry/stop/target from the orchestrator.
-        let signal_opt = tredo
-            .run_executer_with_aggregation(
-                symbol,
-                observed_price,
-                aggregated_signal.as_ref(),
-                chain_id,
-            )
-            .await?;
+                if bars.len() >= 100 {
+                    let recent_closes: Vec<f64> = bars.iter().rev().take(20).map(|b| b.close).collect();
+                    let recent_trend = if recent_closes.len() >= 2 {
+                        (recent_closes[0] - recent_closes[recent_closes.len() - 1]) / recent_closes[recent_closes.len() - 1]
+                    } else {
+                        0.0
+                    };
+                    let regime = *self.state.market_regime.read().await;
 
-        match &signal_opt {
-            Some(sig) => {
-                self.state
-                    .add_cot_step(
-                        chain_id,
-                        "Executer",
-                        &format!(
-                            "AGENTIC decision for {} (observed price {:.2})",
-                            symbol, observed_price
-                        ),
-                        if sig.direction == TradeDirection::Long {
-                            "BUY"
-                        } else {
-                            "SELL"
-                        },
-                        &format!(
-                            "Confidence: {:.1}%, Confluence: {:.1}%, R:R {:.1}:1, Reason: {}",
-                            sig.confidence_score * 100.0,
-                            sig.confluence_score * 100.0,
-                            sig.risk_reward_ratio,
-                            sig.reasoning.chars().take(60).collect::<String>()
-                        ),
-                        sig.confidence_score,
-                        Some(symbol.to_string()),
-                    )
-                    .await;
-            }
-            None => {
-                self.state
-                    .add_cot_step(
-                        chain_id,
-                        "Executer",
-                        &format!(
-                            "AGENTIC decision for {} (observed price {:.2})",
-                            symbol, observed_price
-                        ),
-                        "HOLD",
-                        "LLM decided HOLD — no trade placed",
-                        0.0,
-                        Some(symbol.to_string()),
-                    )
-                    .await;
+                    let regime_consistent = match &regime {
+                        Some(crate::types::MarketRegime::TrendingBull) => recent_trend > -0.005,
+                        Some(crate::types::MarketRegime::TrendingBear) => recent_trend < 0.005,
+                        _ => true,
+                    };
+
+                    if !regime_consistent {
+                        self.state
+                            .add_cot_step(
+                                chain_id, "WFA_Gate",
+                                &format!("Regime consistency check for {}", symbol),
+                                "REJECT",
+                                &format!("Regime {:?} inconsistent with recent trend ({:.3}%). WFA gate blocking.", regime, recent_trend * 100.0),
+                                0.1, Some(symbol.to_string()),
+                            )
+                            .await;
+                        return Ok(PipelineSummary {
+                            executed: false,
+                            phase_results: vec![],
+                            total_duration_ms: start.elapsed().as_millis() as u64,
+                            final_signal: None,
+                            reason: format!("WFA gate: Regime {:?} inconsistent with recent price action", regime),
+                        });
+                    }
+
+                    self.state
+                        .add_cot_step(
+                            chain_id, "WFA_Gate",
+                            &format!("Regime consistency check for {}", symbol),
+                            "PASS",
+                            &format!("Regime {:?} consistent with recent trend ({:.3}%)", regime, recent_trend * 100.0),
+                            0.9, Some(symbol.to_string()),
+                        )
+                        .await;
+                }
             }
         }
 
-        let executed = signal_opt.is_some();
-        let exec_reason = if executed {
-            "Tredo trade executed".to_string()
-        } else {
-            "Tredo HOLD — no trade placed".to_string()
-        };
+        // ═══ LAYER 3: DEBATE LAYER (Advisory Only) ════════════════════════════
+        // Multi-round adversarial decision: Bull Team vs Bear Team → Synthesizer → Judge
+        // NOTE: Debate agents are ADVISORY only. They provide evidence + confidence.
+        // Only the Judge (Layer 4) has decision-making power.
+        let debate_layer = crate::debate_layer::DebateLayer::new(self.state.clone());
+        let (verdict, signal_opt) = debate_layer.run_debate(symbol, observed_price).await;
 
-        let total_ms = start.elapsed().as_millis() as u64;
-        let final_action = if executed { "TRADE_EXECUTED" } else { "HOLD" };
-        let final_reason = if executed {
-            // The signal contains the levels the *agent* decided
-            let sig = signal_opt.as_ref().unwrap();
-            format!(
-                "✅ Pipeline complete: {} {} @ entry {:.2} (agent decided SL {:.2} TP {:.2}) in {}ms",
-                symbol,
-                if sig.direction == TradeDirection::Long { "BUY" } else { "SELL" },
-                sig.entry_price,
-                sig.stop_loss,
-                sig.take_profit,
-                total_ms
-            )
-        } else {
-            format!(
-                "Pipeline complete: HOLD for {} in {}ms. {}",
-                symbol, total_ms, exec_reason
-            )
-        };
         self.state
             .add_cot_step(
-                chain_id,
-                "Decision",
-                "Pipeline final decision",
-                final_action,
-                &final_reason,
+                chain_id, "DebateLayer",
+                &format!("Adversarial debate for {} ({} rounds)", symbol, verdict.rounds_played),
+                &verdict.action,
+                &format!(
+                    "Confidence: {:.1}%, Judge veto: {}, Rounds: {}",
+                    verdict.confidence * 100.0, verdict.judge_veto, verdict.rounds_played
+                ),
+                verdict.confidence, Some(symbol.to_string()),
+            )
+            .await;
+
+        // ═══ LAYER 5: EXECUTE TRADE (if debate layer approved) ══════════════════
+        let executed = if let Some(ref sig) = signal_opt {
+            match self.execution.execute_paper_trade(sig).await {
+                Ok(result) => {
+                    println!("[Pipeline] ✅ Trade executed: {}", result);
+
+                    self.state
+                        .add_cot_step(
+                            chain_id, "ExecutionCoordinator",
+                            &format!("Executing {} paper trade", symbol),
+                            "EXECUTED",
+                            &result,
+                            sig.confidence_score, Some(symbol.to_string()),
+                        )
+                        .await;
+
+                    let _ = self.outcome_logger.run(None).await;
+                    self.state
+                        .add_cot_step(
+                            chain_id, "OutcomeLogger",
+                            "Logging trade outcome", "LOGGED",
+                            &format!("Trade logged for {} {:?}", symbol, sig.direction),
+                            0.8, Some(symbol.to_string()),
+                        )
+                        .await;
+
+                    true
+                }
+                Err(e) => {
+                    println!("[Pipeline] ❌ Trade execution failed: {}", e);
+                    false
+                }
+            }
+        } else {
+            self.state
+                .add_cot_step(
+                    chain_id, "Executer",
+                    &format!("AGENTIC HOLD for {}", symbol),
+                    "HOLD", "Debate layer decided HOLD — no trade placed",
+                    0.0, Some(symbol.to_string()),
+                )
+                .await;
+            false
+        };
+
+        // ── Pipeline completion ──────────────────────────────────────────────
+        let total_ms = start.elapsed().as_millis() as u64;
+        let exec_reason = if executed {
+            let sig = signal_opt.as_ref().unwrap();
+            format!(
+                "✅ Pipeline complete: {} {} @ entry {:.2} (SL {:.2} TP {:.2}) in {}ms",
+                symbol,
+                if sig.direction == TradeDirection::Long { "BUY" } else { "SELL" },
+                sig.entry_price, sig.stop_loss, sig.take_profit, total_ms
+            )
+        } else {
+            format!(
+                "Pipeline complete: HOLD for {} in {}ms",
+                symbol, total_ms
+            )
+        };
+
+        self.state
+            .add_cot_step(
+                chain_id, "Decision", "Pipeline final decision",
+                if executed { "TRADE_EXECUTED" } else { "HOLD" },
+                &exec_reason,
                 if executed { 0.9 } else { 0.5 },
                 Some(symbol.to_string()),
             )
@@ -376,15 +403,5 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
             final_signal: signal_opt,
             reason: exec_reason,
         })
-    }
-
-    pub async fn run_health_check(&self) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
-        let reports = vec!["System health: OK (LLM-driven autonomous mode)".to_string()];
-        Ok(reports)
-    }
-
-    pub async fn run_monitoring_loop(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        println!("[Orchestrator] Monitoring loop started (LLM-driven)");
-        Ok(())
     }
 }

@@ -5,9 +5,10 @@
 
 use crate::prelude::*;
 use crate::{
-    render_backtest, render_cot, render_dashboard, render_health, render_help, render_models,
-    render_performance, render_policy_cache, render_positions, render_rules, render_scanner,
-    render_tree, render_watchlist, AppState, Tab, ALL_BUTTONS, NUM_TABS,
+    render_backtest, render_broker, render_cot, render_dashboard, render_health, render_help,
+    render_models, render_performance, render_policy_cache, render_positions, render_rules,
+    render_scanner, render_settings, render_tree, render_watchlist, AppState, Tab, ALL_BUTTONS,
+    NUM_TABS,
 };
 
 /// Main UI renderer — layouts the screen and delegates to tab-specific renderers.
@@ -61,22 +62,23 @@ pub fn ui(f: &mut Frame, app: &mut AppState) {
 
     // ── Tabs with responsive sizing ────────────────────────────────────────
     let tab_titles: Vec<Line> = (0..NUM_TABS)
-        .map(|i| {
-            let tab = match i {
-                0 => Tab::Dashboard,
-                1 => Tab::Cot,
-                2 => Tab::Positions,
-                3 => Tab::Watchlist,
-                4 => Tab::Models,
-                5 => Tab::Tree,
-                6 => Tab::Rules,
-                7 => Tab::PolicyCache,
-                8 => Tab::Scanner,
-                9 => Tab::Health,
-                10 => Tab::Performance,
-                11 => Tab::Backtest,
-                _ => Tab::Help,
-            };
+        .map(|i| {                let tab = match i {
+                    0 => Tab::Dashboard,
+                    1 => Tab::Cot,
+                    2 => Tab::Positions,
+                    3 => Tab::Watchlist,
+                    4 => Tab::Models,
+                    5 => Tab::Tree,
+                    6 => Tab::Rules,
+                    7 => Tab::PolicyCache,
+                    8 => Tab::Scanner,
+                    9 => Tab::Health,
+                    10 => Tab::Performance,
+                    11 => Tab::Backtest,
+                    12 => Tab::Broker,
+                    13 => Tab::Settings,
+                    _ => Tab::Help,
+                };
             if i == app.selected_tab {
                 Line::from(Span::styled(
                     tab.title(),
@@ -133,6 +135,8 @@ pub fn ui(f: &mut Frame, app: &mut AppState) {
         9 => render_health(f, chunks[2], app),
         10 => render_performance(f, chunks[2], app),
         11 => render_backtest(f, chunks[2], app),
+        12 => render_broker(f, chunks[2], app),
+        13 => render_settings(f, chunks[2], app),
         _ => render_help(f, chunks[2]),
     }
 
@@ -268,6 +272,14 @@ fn render_overlay(f: &mut Frame, area: Rect) {
         Line::from(vec![
             Span::styled("  1-0            ", Style::default().fg(THEME.neutral)),
             Span::styled("Jump to tab by number", Style::default().fg(THEME.highlight)),
+        ]),
+        Line::from(vec![
+            Span::styled("  b              ", Style::default().fg(THEME.neutral)),
+            Span::styled("Jump to Broker page", Style::default().fg(THEME.highlight)),
+        ]),
+        Line::from(vec![
+            Span::styled("  S              ", Style::default().fg(THEME.neutral)),
+            Span::styled("Jump to Settings page", Style::default().fg(THEME.highlight)),
         ]),
         Line::from(vec![
             Span::styled("  /              ", Style::default().fg(THEME.neutral)),

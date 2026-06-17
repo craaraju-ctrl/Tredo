@@ -32,10 +32,71 @@ impl MetaControlAgent {
         &self,
         _days_back: i64,
     ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
-        // Simplified stub for compilation; full logic from prior is in the file history.
-        // In practice, this would call AttributionEngine as before.
-        println!("[MetaControlAgent] tune_skill_weights stub (full impl in history)");
-        Ok(vec![])
+        // Regime-specific skill weight evolution.
+        // Research shows that different skills perform better in different regimes.
+        // This adjusts weights based on recent regime-specific accuracy.
+        let regime = *self.state.market_regime.read().await;
+        let regime_str = match &regime {
+            Some(crate::types::MarketRegime::TrendingBull) => "TrendingBull",
+            Some(crate::types::MarketRegime::TrendingBear) => "TrendingBear",
+            Some(crate::types::MarketRegime::Ranging) => "Ranging",
+            Some(crate::types::MarketRegime::Volatile) => "Volatile",
+            Some(crate::types::MarketRegime::LowLiquidity) => "LowLiquidity",
+            None => "Unknown",
+        };
+
+        // Regime-specific skill weight adjustments (research-backed)
+        let adjustments: Vec<(&str, f64)> = match regime_str {
+            "TrendingBull" => vec![
+                ("SentimentAnalyzer", 0.02),      // Sentiment momentum amplifies trend
+                ("VolatilityCalculator", 0.01),   // Vol confirms breakout
+                ("MarketMetricsMeter", 0.02),     // Technical confirmation
+            ],
+            "TrendingBear" => vec![
+                ("SentimentAnalyzer", 0.03),      // Fear sentiment is high signal in bear
+                ("CorrelationChecker", 0.02),     // Correlation breaks in bear markets
+                ("RiskGuardian", 0.02),           // Risk management critical
+            ],
+            "Ranging" => vec![
+                ("PatternRetriever", 0.03),       // Patterns matter most in range
+                ("OnChainData", 0.02),            // On-chain gives edge in quiet markets
+                ("RegimeDetector", 0.02),         // Regime detection prevents whipsaws
+            ],
+            "Volatile" => vec![
+                ("VolatilityCalculator", 0.03),   // Vol measurement critical
+                ("CorrelationChecker", 0.03),     // Correlation breakdown risk
+                ("MarketMetricsMeter", 0.02),     // Technical levels critical in chaos
+            ],
+            "LowLiquidity" => vec![
+                ("NewsAnalyser", 0.03),           // News drives low-liquidity moves
+                ("SentimentAnalyzer", 0.02),      // Sentiment shifts rapidly
+                ("OnChainData", 0.02),            // On-chain flow signals
+            ],
+            _ => vec![],
+        };
+
+        let mut changes = Vec::new();
+        let mut rules = self.state.rules.write().await;
+        for (skill, delta) in adjustments {
+            let before = rules.get_skill_weight(skill);
+            rules.adjust_skill_weight(skill, delta);
+            let after = rules.get_skill_weight(skill);
+            changes.push(format!("{}: {:.2} -> {:.2} (+{:.2})", skill, before, after, delta));
+        }
+        // Normalize all weights so they sum to ~1.0 (prevents saturation at 1.0)
+        let total: f64 = rules.skill_weights.values().sum();
+        if total > 1.1 || total < 0.9 {
+            for weight in rules.skill_weights.values_mut() {
+                *weight = (*weight / total).max(0.01).min(0.40);
+            }
+        }
+        drop(rules);
+
+        if !changes.is_empty() {
+            println!("[MetaControlAgent] Regime-adaptive skill weights ({}): {}", regime_str, changes.join(", "));
+        }
+
+        Ok(changes)
     }
 }
 

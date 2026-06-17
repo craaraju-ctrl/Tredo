@@ -74,12 +74,12 @@ graph TB
         PCACHE2[Policy Cache<br/>learned features→action→outcome]
     end
 
-    subgraph "REASONING LAYER [Medium Loop — 5m]"
-        PRO[Proposer Agent<br/>Suggests trade]
-        CRT[Critic Agent<br/>Challenges assumptions]
-        RSK[Risk Agent<br/>Enforces limits]
-        HIST[Historian Agent<br/>Retrieves past episodes]
-        AGG[Aggregator<br/>Reconciles to single signal]
+    subgraph "5-LAYER PIPELINE [Medium Loop — 5m]"
+        L1[Layer 1: HardRulesGate<br/>Priority-based blocking]
+        L2[Layer 2: Identifier + Verifier<br/>Advisory — data gathering]
+        L3[Layer 3: DebateLayer<br/>BullTeam 12f vs BearTeam 11f]
+        L4[Layer 4: Judge/Adjudicator<br/>Debate quality only]
+        L5[Layer 5: Execution<br/>Autonomous levels + sizing]
     end
 
     subgraph "PERCEPTION LAYER [Fast Loop — 5s]"
@@ -115,20 +115,20 @@ graph TB
     HIST -->|queries| VECTOR
     PCACHE -->|short-circuits| PRO
 
-    PRO --> AGG
-    CRT --> AGG
-    RSK --> AGG
-    HIST --> AGG
-    AGG -->|Final Signal| RT
-    RT -->|Trade| BR
+    L1 -->|PASS| L2
+    L2 --> L3
+    L3 -->|BullTeam 12f| L4
+    L3 -->|BearTeam 11f| L4
+    L4 -->|APPROVE| L5
+    L5 -->|Trade| BR
 
-    Note: All debate participants + main agents also execute pluggable AgentSkills (how) and perform hierarchical trained memory recall (local vector + agentmemory) so they "understand exactly what they were doing" before. Rules (Disciplined Core) are applied with memory-based adjustments. Policy Cache short-circuits debate on familiar setups.
+    Note: Layer 1 (HardRulesGate) runs FIRST with priority-based blocking (Critical > High > Medium > Low). Layers 2-3 are advisory only. Layer 4 evaluates debate quality ONLY. Layer 5 executes.
 
-    PRICE --> PRO & CRT & RSK
-    NEWS --> PRO
-    PATTERN --> PRO
-    ANOMALY --> RSK
-    WM -->|beliefs| PRO & CRT & RSK
+    PRICE --> L2
+    NEWS --> L3
+    PATTERN --> L2
+    ANOMALY --> L2
+    WM -->|beliefs| L2 & L3
 ```
 
 ### Execution Loops (Temporal Hierarchy)
@@ -414,43 +414,44 @@ flowchart LR
 
 ## 5. 🗣️ Phase C — Multi-Agent Debate Pipeline
 
-### 5.1 Debate Architecture
+### 5.1 Debate Architecture (5-Layer Pipeline)
 
 ```mermaid
 flowchart TB
-    subgraph "Debate Coordinator"
-        DC[DebateCoordinator]
+    subgraph "Layer 1: HardRulesGate"
+        HG[HardRulesGate<br/>Priority-based blocking<br/>Critical > High > Medium > Low]
     end
     
-    subgraph "Debate Agents [Parallel via tokio::join!]"
-        PRO[Proposer Agent<br/>📈 Bullish Bias]
-        CRT[Critic Agent<br/>📉 Bearish Bias]
-        RSK[Risk Agent<br/>⚖️ Neutral Enforcer]
-        HIST[Historian Agent<br/>📚 Memory Recall]
+    subgraph "Layer 2: Identifier + Verifier (Advisory)"
+        ID[Identifier<br/>Market Intel + Patterns + Pivots]
+        VR[Verifier<br/>Risk Psychology + Calculator]
     end
     
-    subgraph "Inputs"
-        CTX[Market Context\nPrice + Confluence]
-        FCST[Kronos Forecast\n5-Bar Prediction]
-        NEWS[NEWS Context\nRecent Headlines]
-        MEM[Vector Memory\nSimilar Episodes]
+    subgraph "Layer 3: DebateLayer (Advisory)"
+        BT[BullTeam<br/>12 evidence factors]
+        BR[BearTeam<br/>11 evidence factors]
+        SYN[Synthesis<br/>Weighted verdict]
     end
     
-    CTX --> PRO & CRT & RSK & HIST
-    FCST --> PRO & CRT
-    NEWS --> PRO & CRT
-    MEM --> CRT & HIST
+    subgraph "Layer 4: Judge/Adjudicator"
+        JUDGE[Judge<br/>Debate quality ONLY<br/>Confidence + Evidence + Count]
+    end
     
-    PRO -->|Proposal: BUY/SELL| AGG[Aggregator]
-    CRT -->|Critique: Counter-Arguments| AGG
-    RSK -->|Risk Assessment: PASS/CAUTION/BLOCK| AGG
-    HIST -->|Historical Context: Past Outcomes| AGG
+    subgraph "Layer 5: Execution"
+        EXEC[Execution<br/>Autonomous levels + sizing]
+    end
     
-    AGG -->|Reconciled Signal| DECISION{Final Decision}
-    DECISION -->|Unanimous| TRADE[Execute Trade]
-    DECISION -->|Disagreement| ESCALATE{Confidence Threshold}
-    ESCALATE -->|High| TRADE
-    ESCALATE -->|Low| HOLD[🖐️ HOLD — Skip Cycle]
+    HG -->|PASS| ID
+    HG -->|PASS| VR
+    ID --> BT
+    ID --> BR
+    VR --> BT
+    VR --> BR
+    BT -->|12 factors| SYN
+    BR -->|11 factors| SYN
+    SYN --> JUDGE
+    JUDGE -->|APPROVE| EXEC
+    JUDGE -->|VETO (quality)| HOLD[🖐️ HOLD]
 ```
 
 ### 5.2 Agent Persona Prompts
@@ -573,6 +574,7 @@ gantt
 | `news.rs` | RSS parsing, sentiment extraction | NewsItem structure validity |
 | `vector_memory.rs` | Store + query similarity | Requires LanceDB running |
 | `meta_control.rs` | Rule change proposal generation | Mock LLM responses |
+| `hard_rules_gate.rs` | **14 tests**: priority-based blocking logic (Critical/High/Medium/Low), crypto bypass, regime-adaptive confluence, all 12 rules checked | Validates Layer 1 gate semantics |
 
 ### Integration Tests
 

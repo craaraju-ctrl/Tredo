@@ -11,7 +11,8 @@ The primary Terminal UI for tredo — built with [ratatui](https://ratatui.rs/).
   - Skill score bars with direction icons (▲ Bullish, ▼ Bearish, ◆ Neutral) and confidence %
   - Live reasoning sub-lines for leaf agents
   - Unicode box-draw tree connectors (├──, └──, │)
-- **Skill Consensus Header** — Aggregated skill signal at top of tree (net score, conviction, breakdown)
+- **Broker & Data** — Real-time status of all configured brokers (Alpaca, Zerodha, Binance), connection state, account balances, margin usage, and active orders
+- **Settings & Control** — Interactive system configuration panel with Models, Agents, Skills, and Risk parameter editing. Toggle agents on/off, adjust risk parameters (+/-), confirm changes with y/N
 - **Color Legend** — Key showing all action badge colors and score symbols at bottom
 - **Rules View** — Active `DisciplinedCore` rules with memory-adjusted values
 - **Model Selection** — Browse and switch Ollama models interactively
@@ -43,6 +44,8 @@ cargo run -p tredo-tui
 | `↑` / `↓` | Scroll lists, scroll tree, select model |
 | `←` / `→` | Navigate action buttons |
 | `Enter` | Activate / Confirm |
+| `b` | Jump to Broker page |
+| `S` | Jump to Settings page |
 | `r` | Force refresh |
 | `s` | Sort current table by next column |
 | `/` | Search/filter (COT Log, Policy Cache) |

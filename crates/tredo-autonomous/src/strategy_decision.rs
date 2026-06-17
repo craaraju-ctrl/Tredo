@@ -5,8 +5,8 @@ use chrono::Utc;
 use std::error::Error;
 use tredo_core::{
     calculate_confluence_score, calculate_pivot_points, validate_trade_setup, AgentInput,
-    MarketContext,
-}; // Full debate aggregator wired (Proposer etc using new skills)
+    LlmTradeDecision, MarketContext,
+};
 
 pub struct StrategyDecisionAgent {
     pub state: SharedState,
@@ -94,7 +94,7 @@ impl StrategyDecisionAgent {
         let session = get_indian_session_info(Utc::now());
 
         // Pull existing MI data (patterns, regime, forecast, aggregated from skills)
-        let _forecast_summary = {
+        let forecast_summary = {
             let last = self.state.last_forecast.read().await;
             match last.as_ref() {
                 Some(v) => v["summary"]
@@ -115,7 +115,7 @@ impl StrategyDecisionAgent {
             }
         };
 
-        let _portfolio_heat: f64 = {
+        let portfolio_heat: f64 = {
             let total_risk: f64 = portfolio.open_positions.iter().map(|p| p.risk_amount).sum();
             if portfolio.total_equity > 0.0 {
                 total_risk / portfolio.total_equity
@@ -123,10 +123,8 @@ impl StrategyDecisionAgent {
                 0.0
             }
         };
-        let _consecutive_losses = portfolio.consecutive_losses;
-        let _daily_pnl_pct = portfolio.daily_pnl_pct;
-        let _total_trades_today = portfolio.total_trades_today;
-
+        let consecutive_losses = portfolio.consecutive_losses;
+        let daily_pnl_pct = portfolio.daily_pnl_pct;
         // === AGENTIC INDICATOR ANALYSIS (no external price points) ===
         let rsi = crate::helpers::compute_rsi(&bars, 14);
         let (_, _, macd_hist) = crate::helpers::compute_macd(&bars);
@@ -140,7 +138,13 @@ impl StrategyDecisionAgent {
                 }
                 tr_sum / bars.len() as f64 / current_price
             } else {
-                0.015
+                // Regime-adaptive ATR fallback
+                match trend_label {
+                    "Bullish" => 0.015,
+                    "Bearish" => 0.018,
+                    "Ranging" => 0.012,
+                    _ => 0.025, // Volatile/LowLiquidity — wider stops needed
+                }
             }
         };
 
@@ -163,16 +167,12 @@ impl StrategyDecisionAgent {
 
         // === CONNECTED: Pull NewsAnalyser + MetricsMeter snapshots (set by MI / loops) for richer agent reasoning ===
         // These feed the agent's own analysis + autonomous level calc via memory/debate/agg influence. Agent decides.
-        let (_news_ctx, meter) = {
+        let (news_ctx, meter) = {
             let n = self.state.latest_news.read().await;
             let m = self.state.latest_metrics.read().await;
             (n.get(symbol).cloned(), m.get(symbol).cloned())
         };
         let meter_atr = meter.as_ref().map(|m| m.atr_pct).unwrap_or(atr_pct);
-        let _meter_regime = meter
-            .as_ref()
-            .map(|m| m.regime_hint.clone())
-            .unwrap_or_else(|| "ranging".into());
         if let Some(m) = &meter {
             println!(
                 "[Strategy] using meter snapshot: rsi={:.1} conf={:.2} regime={}",
@@ -180,7 +180,7 @@ impl StrategyDecisionAgent {
             );
         }
 
-        let (entry, stop_loss, take_profit, risk_reward_ratio) =
+        let (entry, stop_loss, take_profit, _rule_rr) =
             crate::helpers::compute_autonomous_levels(
                 symbol,
                 current_price,
@@ -233,19 +233,11 @@ impl StrategyDecisionAgent {
             }
         };
 
-        if debate_action == "HOLD" || debate_conf < 0.45 {
-            println!("[StrategyDecisionAgent] Agent decided HOLD for {} (debate + indicators: rsi={:.1} macd_hist={:.4})", symbol, rsi, macd_hist);
-            return Ok(None);
-        }
-
         // === VECTOR MEMORY USAGE FOR REGIME MATCHING (Gap 3) ===
         // Pull similar historical episodes using the agent's vector memory.
-        // When LanceDB feature is enabled this becomes powerful long-term regime memory.
-        // This is now actively used in the decision instead of being bypassed.
         let vector_context = {
             let vm = self.state.vector_memory.lock().await;
             if !vm.is_empty() {
-                // Use a query that captures current market structure (price + regime + confluence)
                 let query = format!(
                     "{} regime={} confluence={:.2} price={:.2}",
                     symbol, trend_label, confluence, current_price
@@ -274,9 +266,9 @@ impl StrategyDecisionAgent {
             }
         };
 
-        // Build reasoning including indicators the agent used + vector memory
-        let reasoning = format!(
-            "Agentic decision: {} | RSI={:.1} MACD_hist={:.4} ATR%={:.2}% | Pivots R1/S1={:.2}/{:.2} | Patterns: {} | Debate+Agg: {} (conf {:.2}) | {} | {}",
+        // Build rule-based reasoning including indicators + vector memory
+        let rule_based_reasoning = format!(
+            "Rule-based: {} | RSI={:.1} MACD_hist={:.4} ATR%={:.2}% | Pivots R1/S1={:.2}/{:.2} | Patterns: {} | Debate+Agg: {} (conf {:.2}) | {} | {}",
             direction as u8,
             rsi, macd_hist, atr_pct * 100.0,
             pivots.r1, pivots.s1,
@@ -286,32 +278,234 @@ impl StrategyDecisionAgent {
             vector_context
         );
 
-        // === REAL POSITION SIZING (was 0.0, now uses calculate_position_size from helpers) ===
-        let equity = {
-            let portfolio = self.state.portfolio.read().await;
-            portfolio.cash_balance
-                + portfolio
-                    .open_positions
-                    .iter()
-                    .map(|p| p.current_price * p.quantity)
-                    .sum::<f64>()
+        // === LLM DECISION (Phase 5) — ask_for_trade_decision when Ollama available ===
+        // The LLM gets ALL context: indicators, forecast, news, calendar, goals, memory.
+        // It produces structured reasoning (WHY buy/sell/hold). Falls back to rules if offline.
+        let calendar_context = {
+            let cal = self.state.calendar_events.read().await;
+            if cal.is_empty() {
+                "No high-impact events scheduled.".to_string()
+            } else {
+                cal.iter()
+                    .map(|e| format!("⚠ {} at {} ({:?})", e.title, e.time.as_deref().unwrap_or("TBD"), e.impact))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
         };
+        let (trading_mode, daily_goal_context) = {
+            let goals = self.state.trading_goals.read().await;
+            (
+                format!("{:?}", goals.mode),
+                format!(
+                    "Daily P&L target: {:.1}% | Current: {:.2}%",
+                    goals.daily_target_pnl_pct * 100.0,
+                    daily_pnl_pct * 100.0
+                ),
+            )
+        };
+        let multi_tf_context = {
+            let mtf = self.state.multi_timeframe_data.read().await;
+            if let Some(tf_data) = mtf.get(symbol) {
+                tf_data.iter()
+                    .map(|tf| {
+                        let bars_summary = if tf.ohlcv.len() >= 2 {
+                            let last = tf.ohlcv.last().unwrap();
+                            let prev = &tf.ohlcv[tf.ohlcv.len() - 2];
+                            let chg = (last.close - prev.close) / prev.close * 100.0;
+                            format!("close={:.2} ({:+.2}%)", last.close, chg)
+                        } else {
+                            "no data".to_string()
+                        };
+                        format!("{}: {}", tf.timeframe, bars_summary)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            } else {
+                "No multi-TF data available.".to_string()
+            }
+        };
+        let agent_market_summary = {
+            let s = self.state.agent_market_summary.read().await;
+            if s.is_empty() { "No market summary yet.".to_string() } else { s.clone() }
+        };
+        let news_context = match &news_ctx {
+            Some(ctx) => ctx.to_prompt_string(),
+            None => "No recent news.".to_string(),
+        };
+        let similar_episodes_context = vector_context.clone();
+
+        // Track whether LLM was used (needed after llm_decision is moved)
+        let mut llm_was_used = false;
+
+        // Ask the LLM for its structured decision with full reasoning.
+        // ask_for_trade_decision() already handles Ollama being down gracefully (returns HOLD),
+        // so no separate health check needed — avoids adding 5s latency when offline.
+        println!("[StrategyDecision] 🧠 Asking LLM for agentic decision on {}", symbol);
+        let llm_decision: Option<LlmTradeDecision> = {
+            let decision = self.state.llm.ask_for_trade_decision(
+                symbol,
+                current_price,
+                confluence,
+                &trend_label,
+                pivots.pivot,
+                pivots.r1,
+                pivots.s1,
+                &forecast_summary,
+                portfolio_heat,
+                session.market_open,
+                consecutive_losses,
+                &calendar_context,
+                &trading_mode,
+                &daily_goal_context,
+                &multi_tf_context,
+                &agent_market_summary,
+                &news_context,
+                &similar_episodes_context,
+                &patterns_context,
+            ).await;
+
+            if decision.action != "HOLD" && !decision.reason.contains("Parse failed") {
+                println!(
+                    "[StrategyDecision] 🤖 LLM verdict: {} @ {:.2} | reason: {}",
+                    decision.action, decision.entry, decision.reason
+                );
+                llm_was_used = true;
+                Some(decision)
+            } else {
+                println!("[StrategyDecision] ⚠ LLM returned HOLD or unavailable — using rule-based path.");
+                None
+            }
+        };
+
+        // === BUILD FINAL STRUCTURED REASONING ===
+        // Every decision now gets ranked factors explaining WHY.
+        let (final_action, final_conf, final_reasoning, final_entry, final_sl, final_tp) = {
+            if let Some(llm) = llm_decision {
+                // LLM has final say — its reasoning is richer and context-aware
+                let llm_action = llm.action.clone();
+                let llm_conf = debate_conf.max(0.5); // LLM doesn't give confidence, use debate as floor
+                let llm_reason = format!(
+                    "🧠 LLM REASONING: {} | Rule-based was: {} | Factors: RSI={:.1} MACD={:.4} ATR%={:.2}% | News: {} | Forecast: {} | Debate: {} (conf {:.2}) | Memory: {}",
+                    llm.reason,
+                    debate_action,
+                    rsi, macd_hist, atr_pct * 100.0,
+                    if news_ctx.is_some() { "available" } else { "none" },
+                    forecast_summary,
+                    debate_action, debate_conf,
+                    vector_context,
+                );
+                (
+                    llm_action,
+                    llm_conf,
+                    llm_reason,
+                    llm.entry,
+                    llm.sl,
+                    llm.tp,
+                )
+            } else {
+                // Rule-based fallback
+                (
+                    debate_action.clone(),
+                    debate_conf,
+                    rule_based_reasoning,
+                    entry,
+                    stop_loss,
+                    take_profit,
+                )
+            }
+        };
+
+        // Store LLM reasoning for debugging / UI display
+        {
+            let mut last_reason = self.state.last_llm_reason.write().await;
+            *last_reason = final_reasoning.clone();
+        }
+
+        if final_action == "HOLD" || final_conf < 0.45 {
+            println!("[StrategyDecisionAgent] {} decided HOLD for {} (rsi={:.1} macd_hist={:.4})",
+                if llm_was_used { "LLM" } else { "Rule" },
+                symbol, rsi, macd_hist);
+            return Ok(None);
+        }
+
+        // === Use LLM-provided levels when available, else rule-based levels ===
+        let signal_entry = if final_entry > 0.0 { final_entry } else { entry };
+        let signal_sl = if final_sl > 0.0 { final_sl } else { stop_loss };
+        let signal_tp = if final_tp > 0.0 { final_tp } else { take_profit };
+
+        // Recompute risk/reward from the final (possibly LLM-overridden) levels
+        let final_rr = {
+            let risk = (signal_entry - signal_sl).abs();
+            let reward = (signal_tp - signal_entry).abs();
+            if risk > 0.0 { reward / risk } else { 2.0 }
+        };
+
+        // === ADAPTIVE POSITION SIZING ===
+        // Scale risk by: confidence, regime, consecutive losses, portfolio heat.
+        // Recompute from FRESH portfolio read for accurate heat calculation.
+        let (equity, fresh_heat, fresh_consecutive_losses) = {
+            let p = self.state.portfolio.read().await;
+            let eq = p.cash_balance
+                + p.open_positions
+                    .iter()
+                    .map(|pos| pos.current_price * pos.quantity)
+                    .sum::<f64>();
+            let total_risk: f64 = p.open_positions.iter().map(|pos| pos.risk_amount).sum();
+            let heat = if p.total_equity > 0.0 { total_risk / p.total_equity } else { 0.0 };
+            (eq, heat, p.consecutive_losses)
+        };
+
+        // Compute adaptive risk multiplier based on system state
+        let adaptive_risk_mult = {
+            // 1. Confidence scaling: higher confidence → slightly larger (but capped)
+            let conf_mult = (final_conf / 0.7).min(1.2).max(0.5);
+            // 2. Consecutive loss scaling: more losses → smaller positions
+            let loss_mult = if fresh_consecutive_losses >= 3 {
+                0.5 // Half size after 3 losses
+            } else if fresh_consecutive_losses >= 2 {
+                0.7
+            } else {
+                1.0
+            };
+            // 3. Portfolio heat scaling: more heat → smaller (using fresh data)
+            let heat_mult = if fresh_heat > 0.08 {
+                0.5
+            } else if fresh_heat > 0.05 {
+                0.7
+            } else {
+                1.0
+            };
+            // 4. Regime scaling: volatile = smaller, trending = full size
+            let regime_mult = match trend_label {
+                "Bullish" => 1.0,
+                "Bearish" => 0.7,
+                "Ranging" => 0.8,
+                _ => 0.6, // Volatile/LowLiquidity
+            };
+            let mult = conf_mult * loss_mult * heat_mult * regime_mult;
+            println!(
+                "[Strategy] Adaptive risk: conf={:.2} loss={:.2} heat={:.2} regime={:.2} → mult={:.2}",
+                conf_mult, loss_mult, heat_mult, regime_mult, mult
+            );
+            mult.clamp(0.3, 1.2)
+        };
+
+        let effective_risk = (rules.max_risk_per_trade * adaptive_risk_mult).max(0.003);
         let position_size = crate::helpers::calculate_position_size(
             equity,
-            rules.max_risk_per_trade,
-            entry,
-            stop_loss,
+            effective_risk,
+            signal_entry,
+            signal_sl,
         );
 
         // Validate the calculated size against remaining cash
-        let position_value = position_size * entry;
+        let position_value = position_size * signal_entry;
         let cash_available = {
             let portfolio = self.state.portfolio.read().await;
             portfolio.cash_balance
         };
         let final_position_size = if position_value > cash_available * 0.95 {
-            // Cap to 95% of available cash
-            (cash_available * 0.95) / entry.max(0.0001)
+            (cash_available * 0.95) / signal_entry.max(0.0001)
         } else {
             position_size
         };
@@ -319,14 +513,14 @@ impl StrategyDecisionAgent {
         let signal = TradeSignal {
             symbol: symbol.to_string(),
             direction,
-            entry_price: entry,
-            stop_loss,
-            take_profit,
+            entry_price: signal_entry,
+            stop_loss: signal_sl,
+            take_profit: signal_tp,
             position_size: final_position_size,
             confidence_score: debate_conf.min(0.95),
             confluence_score: confluence,
-            risk_reward_ratio,
-            reasoning,
+            risk_reward_ratio: final_rr,
+            reasoning: final_reasoning,
             timestamp: Utc::now(),
             session_valid: session.market_open,
             risk_check_passed: true, // validated later by verifier
@@ -344,7 +538,7 @@ impl StrategyDecisionAgent {
         println!(
             "[StrategyDecisionAgent] AGENTIC signal {} {} @ entry={:.2} SL={:.2} TP={:.2} (RR {:.1}:1, conf {:.1}%)",
             if direction == tredo_core::TradeDirection::Long { "BUY" } else { "SELL" },
-            symbol, entry, stop_loss, take_profit, risk_reward_ratio, signal.confidence_score * 100.0
+            symbol, signal_entry, signal_sl, signal_tp, final_rr, signal.confidence_score * 100.0
         );
 
         Ok(Some(signal))

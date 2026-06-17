@@ -22,6 +22,7 @@ use chrono::Utc;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicBool, Ordering};
+#[allow(unused_imports)]
 use tokio::sync::RwLock;
 use tredo_core::paper_engine::{
     BrokerAdapter, ClosedTrade, OrderRequest, OrderStatus, OrderType, PortfolioSummary,
@@ -57,6 +58,7 @@ pub enum KiteError {
 
 /// Envelope for all Kite API responses.
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct KiteResponse<T> {
     status: String, // "success" | "error"
     data: Option<T>,
@@ -68,6 +70,7 @@ struct KiteResponse<T> {
 
 /// Token exchange response.
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct SessionData {
     access_token: String,
     #[serde(default)]
@@ -80,6 +83,7 @@ struct SessionData {
 
 /// User profile/margins response.
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct UserMargins {
     equity: Option<MarginSegment>,
     commodity: Option<MarginSegment>,
@@ -87,6 +91,7 @@ struct UserMargins {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct MarginSegment {
     available: MarginBreakdown,
     used: MarginBreakdown,
@@ -96,6 +101,7 @@ struct MarginSegment {
 
 #[derive(Debug, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct MarginBreakdown {
     #[serde(default)]
     adhoc_margin: f64,
@@ -112,6 +118,7 @@ struct MarginBreakdown {
 /// Order response from Kite.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct KiteOrder {
     order_id: Option<String>,
     order_timestamp: Option<String>,
@@ -146,6 +153,7 @@ struct KiteOrder {
 /// Position response from Kite.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct KitePosition {
     trading_symbol: Option<String>,
     exchange: Option<String>,
@@ -177,6 +185,7 @@ struct KitePosition {
 /// Holding response from Kite.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct KiteHolding {
     trading_symbol: Option<String>,
     exchange: Option<String>,
@@ -211,6 +220,7 @@ struct KiteHolding {
 #[derive(Debug)]
 pub struct ZerodhaKiteBroker {
     api_key: String,
+    #[allow(dead_code)]
     api_secret: String,
     base_url: String,
     access_token: RwLock<Option<String>>,
@@ -319,6 +329,7 @@ impl ZerodhaKiteBroker {
     }
 
     /// Make an authenticated POST request with form data.
+    #[allow(dead_code)]
     async fn post_form<T: serde::de::DeserializeOwned>(
         &self,
         path: &str,

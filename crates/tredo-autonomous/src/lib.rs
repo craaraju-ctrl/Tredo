@@ -33,7 +33,8 @@ pub mod weight_tuner; // AttributionEngine + symmetric reward/penalty weight evo
 // === NEW SKILLS/TOOLS (research upgrades: sentiment, vol, regime for better MI/risk/strategies) ===
 pub mod correlation_checker;
 pub mod debate;
-pub mod debate_orchestrator; // Multi-agent debate consensus engine
+pub mod debate_layer; // High-level adversarial debate: Bull/Bear teams, Synthesizer, Judge
+pub mod hard_rules_gate; // Layer 1: Priority-based hard rules gate (top of pipeline)
 pub mod market_metrics_meter; // New: Market Metrics Meter tool - computes rich indicators (RSI/MACD/ATR/BB/Stoch/Vol/Regime/Fib) as pluggable AgentSkill + direct meter for autonomous levels
 pub mod news_analyser; // New: integrated News Analyser (uses multi-API NewsFetcher + scores) as AgentSkill + tool, connected to memory/WS/pipeline/aggregator
 pub mod on_chain_data; // New on-chain tool for crypto skills (free API stub ready)

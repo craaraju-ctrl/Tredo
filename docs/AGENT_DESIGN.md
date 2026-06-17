@@ -142,43 +142,41 @@ All Sub-Agents are **deterministic, pure-logic** computations with no LLM depend
 
 ---
 
-## 🔄 Pipeline Phase Flow
+## 🔄 Pipeline Phase Flow (5-Layer Architecture)
 
 ```mermaid
 flowchart TD
     START[Start Pipeline] --> P0{Phase 0:\nOpen Position?}
     P0 -->|Yes| SKIP[Skip — Position Exists]
-    P0 -->|No| P1[Phase 1:\nDiscipline Guards]
+    P0 -->|No| L1[Layer 1:\nHardRulesGate\nPriority-based blocking]
     
-    P1 --> P1C{Sub-Agent Consensus}
-    P1C -->|FAIL| P1F[Return: Discipline Failed]
-    P1C -->|PASS| P2[Phase 2:\nMarket Intelligence]
+    L1 --> L1C{All Critical/High\nrules pass?}
+    L1C -->|FAIL| L1F[Return: Gate Blocked\n(priority reason)]
+    L1C -->|PASS| L2[Layer 2:\nIdentifier + Verifier\nAdvisory — data gathering only]
     
-    P2 --> P2A[Kronos Forecast]
-    P2 --> P2B[Pivot Calculation]
-    P2 --> P2C[Confluence Scoring]
-    P2 --> P2D[Pattern Detection\n1m + 15m + 1h + 1d]
-    P2 --> P2E[Market Regime Detection]
+    L2 --> L2A[Scanner + Market Intel]
+    L2 --> L2B[Pivots + Confluence]
+    L2 --> L2C[Patterns + Session]
+    L2 --> L2D[Risk Psychology]
+    L2 --> L2E[Risk Calculator + Reflector]
     
-    P2 --> P3[Phase 3:\nRisk Psychology]
-    P3 --> P3A[Portfolio Heat Check]
-    P3 --> P3B[Drawdown Limit Check]
-    P3 --> P3C[Consecutive Loss Check]
+    L2 --> WFA{WFA Gate:\nRegime Consistency}
+    WFA -->|FAIL| WFAF[Return: Regime Inconsistent]
+    WFA -->|PASS| L3[Layer 3:\nDebateLayer\nAdvisory — no veto power]
     
-    P3 --> P3R{Risk Recommendation}
-    P3R -->|HALT| P3F[Return: Risk Halted]
-    P3R -->|Proceed| P4[Phase 4:\nReflection]
+    L3 --> R1[Round 1: BullTeam 12 factors\nvs BearTeam 11 factors]
+    R1 --> R2[Round 2: Adversarial\nchallenges with new indicators]
+    R2 --> R3[Round 3: Synthesis\nweighted verdict]
     
-    P4 --> P5[Phase 5:\nStrategy Decision\nLLM Signal Generation]
-    P5 --> P5C{LLM Decision}
+    R3 --> L4[Layer 4:\nJudge/Adjudicator\nDebate quality evaluation only]
+    L4 --> L4C{Confidence OK?\nEvidence consistent?}
+    L4C -->|VETO| L4F[Return: HOLD\n(debate quality)]
+    L4C -->|APPROVE| L5[Layer 5:\nExecution\nAutonomous levels + sizing]
     
-    P5C -->|HOLD| P5H[Return: HOLD]
-    P5C -->|BUY/SELL| P6[Phase 6:\nExecution]
-    
-    P6 --> P6A[Paper Trade Fill]
-    P6 --> P6B[Portfolio Update]
-    P6 --> P6C[COT Entry]
-    P6 --> DONE[Done: Trade Executed]
+    L5 --> L5A[Paper Trade Fill]
+    L5 --> L5B[Portfolio Update]
+    L5 --> L5C[COT Entry]
+    L5 --> DONE[Done: Trade Executed]
 ```
 
 ---
@@ -210,14 +208,37 @@ Each Main Agent is designed with a distinct **trading personality**:
 
 ## 🛠️ Strong Skills + Rules + Roles + Trained Memory + Policy Cache (Explicit Contract)
 
-Agents and sub-agents **already know what to do** (their Tredo role and responsibilities in the four groups and debate).
+Agents and sub-agents **already know what to do** (their Tredo role and responsibilities in the five-layer pipeline).
+
+### 5-Layer Architecture
+
+```text
+Layer 1: HardRulesGate — ALL hard rules with priority-based blocking
+  Critical/High → always block. Medium → block if no Higher override. Low → warnings only.
+  Runs FIRST — no agents waste compute if hard rules fail.
+
+Layer 2: Identifier + Verifier — Advisory only
+  Market intelligence gathering, risk analysis, confluence, pivots, patterns.
+  These agents NEVER block the pipeline — the gate handled that.
+
+Layer 3: DebateLayer — Advisory only (no veto power)
+  Round 1: BullTeam (12 factors) vs BearTeam (11 factors + SELL proposal)
+  Round 2: Adversarial challenges (OBV, ADX, CCI, Williams %R, VWAP)
+  Round 3: Weighted synthesis with adversarial impact
+
+Layer 4: Judge/Adjudicator — Final authority (debate quality ONLY)
+  Evaluates: confidence threshold, evidence contradiction, signal count.
+  Does NOT re-run risk/regime/confluence checks — those are in Layer 1.
+
+Layer 5: Execution — Autonomous levels + adaptive sizing
+```
+
+### Component Roles
 
 - **Skills** (`tredo-core/src/skills.rs` — the `AgentSkill` trait + `TrainedMemorySkill` + `SkillWrapper`) tell them **how to do** things. Pluggable and executable: SentimentAnalyzer, VolatilityCalculator, regime detection, patterns, and the key `TrainedMemorySkill`. Agents/sub-agents can hold or receive `Vec<Box<dyn AgentSkill>>` and call `execute`.
 - **Rules** (`tredo-core/src/disciplined_core.rs`) tell **what to do and what not to do** (`DisciplineRules`, `validate_trade_setup`, `check_risk_limits`, etc.). These are now memory-aware via `apply_trained_memory_to_rules` (past regret/lessons can tighten confluence or risk limits dynamically).
-- **Hierarchical Trained Memory** (`SharedState::recall_trained_memory`) is how agents and sub-agents **understand exactly what they were doing** before: combines fast local vector RAG (recent trained episodes with regret) + long-term `AgentMemoryClient` (shared "trained intelligence" lessons). Used in StrategyDecision, every debate participant (Proposer/Critic/Risk/Historian), MarketIntelligence, Reflector, MetaControl, and even subs (e.g. ConfluenceScorer). Results are injected into COT, reasoning, and rule adjustments. Tagged steps like "StrongRules+Skills+TrainedMemory".
-- **Policy Cache** (`tredo-runtime/src/policy_cache.rs`) is the **learned trading memory** that records (market features → action → outcome) tuples and short-circuits expensive Ollama debate when the system has seen a similar setup before. It's a learned lookup table, not a neural network — interpretable, self-improving, and honest about when it doesn't have enough data. Seeded from historical trades on startup, updated after every close.
-- **World Model** (`tredo-runtime/src/world_model.rs`) maintains persistent beliefs about symbols, cross-symbol correlations, macro state, and active hypotheses that ground decisions in a coherent market understanding.
-
-This design keeps role code stable and focused while the skills layer provides composable "how", rules stay the iron constitution, trained memory supplies the experience that makes the team smarter, policy cache reduces cost and latency, and world model provides persistent market context. All wiring lives in `tredo-autonomous` (strategy_decision.rs, market_intelligence.rs, debate.rs, confluence_scorer.rs, etc.) and `tredo-runtime` (engine.rs, policy_cache.rs, world_model.rs). Lightweight and compatible with the low-resource target.
+- **Hierarchical Trained Memory** (`SharedState::recall_trained_memory`) is how agents and sub-agents **understand exactly what they were doing** before: combines fast local vector RAG (recent trained episodes with regret) + long-term `AgentMemoryClient` (shared "trained intelligence" lessons). Used in StrategyDecision, every debate participant, MarketIntelligence, Reflector, MetaControl, and even subs. Results are injected into COT, reasoning, and rule adjustments.
+- **Policy Cache** (`tredo-runtime/src/policy_cache.rs`) is the **learned trading memory** that records (market features → action → outcome) tuples and short-circuits expensive Ollama debate when the system has seen a similar setup before.
+- **World Model** (`tredo-runtime/src/world_model.rs`) maintains persistent beliefs about symbols, cross-symbol correlations, macro state, and active hypotheses.
 
 See also the Core Philosophy section in the root README and the dedicated sections in Research.md / Build.md.

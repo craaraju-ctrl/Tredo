@@ -7330,6 +7330,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "once_cell",
+ "reqwest 0.12.28",
  "rusqlite",
  "serde",
  "serde_json",

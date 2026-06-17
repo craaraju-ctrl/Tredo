@@ -7,6 +7,8 @@
 //! Keys:
 //!   q / Ctrl-C   Quit
 //!   Tab / 1-0    Switch tabs
+//!   b            Jump to Broker page
+//!   S            Jump to Settings page
 //!   r            Force refresh
 //!   /            Search/filter (COT Log, Policy Cache)
 //!   s            Sort current table by next column
@@ -20,6 +22,7 @@
 
 // ── Module declarations ───────────────────────────────────────────────────
 mod backtest;
+mod broker;
 mod cot;
 mod dashboard;
 mod health;
@@ -31,6 +34,7 @@ mod positions;
 mod prelude;
 mod rules;
 mod scanner;
+mod settings;
 mod tree;
 mod ui;
 mod watchlist;
@@ -53,6 +57,7 @@ use crossterm::{
 use ratatui::{backend::CrosstermBackend, layout::Rect, Terminal};
 
 pub(crate) use crate::backtest::render_backtest;
+pub(crate) use crate::broker::render_broker;
 pub(crate) use crate::cot::render_cot;
 pub(crate) use crate::dashboard::render_dashboard;
 pub(crate) use crate::health::render_health;
@@ -63,6 +68,8 @@ pub(crate) use crate::policy_cache::render_policy_cache;
 pub(crate) use crate::positions::render_positions;
 pub(crate) use crate::rules::render_rules;
 pub(crate) use crate::scanner::render_scanner;
+pub(crate) use crate::settings::render_settings;
+use crate::settings::{AGENT_NAMES, PANEL_AGENTS, PANEL_MODELS, PANEL_RISK};
 pub(crate) use crate::tree::render_tree;
 pub(crate) use crate::ui::ui;
 pub(crate) use crate::watchlist::render_watchlist;
@@ -77,7 +84,7 @@ const API_BASE: &str = "http://localhost:8082/api";
 /// HTTP polling is kept as a fallback for non-streamed snapshots
 /// (models, watchlist, agents tree, policy cache, backtest).
 const POLL_INTERVAL: Duration = Duration::from_secs(10);
-const NUM_TABS: usize = 13;
+const NUM_TABS: usize = 15;
 
 // ── Action Buttons ────────────────────────────────────────────────────────
 
@@ -182,6 +189,21 @@ pub(crate) struct AppState {
     pub(crate) ws_cot_count: usize,
     /// Last time any WS message was received (for disconnect detection)
     pub(crate) ws_last_seen: Option<Instant>,
+    // ── Settings page interaction state ─────────────────────────────────
+    /// Which settings panel is focused (0=LLM Models, 1=Agents, 2=Skills, 3=Risk Params)
+    pub(crate) settings_panel_focus: usize,
+    /// Which row within the focused panel is selected (e.g., which agent or risk param)
+    pub(crate) settings_row_focus: usize,
+    /// Agent enable/disable states (agent_index -> enabled)
+    pub(crate) agent_enabled: Vec<bool>,
+    /// Whether we're editing a risk parameter (shows increment/decrement UI)
+    pub(crate) risk_editing: bool,
+    /// Confirmation dialog state for risk changes
+    pub(crate) settings_confirm: Option<String>,
+    /// Message displayed after a settings action
+    pub(crate) settings_message: Option<(String, Instant)>,
+    /// Clickable areas for the 5-Layer Pipeline Flow boxes on Dashboard
+    pub(crate) pipeline_layer_areas: Vec<Rect>,
 }
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
@@ -200,7 +222,9 @@ pub(crate) enum Tab {
     Health = 9,
     Performance = 10,
     Backtest = 11,
-    Help = 12,
+    Broker = 12,
+    Settings = 13,
+    Help = 14,
 }
 
 impl Tab {
@@ -218,6 +242,8 @@ impl Tab {
             Tab::Health => "🔷 Health",
             Tab::Performance => "📈 Perf",
             Tab::Backtest => "🔬 Backtest",
+            Tab::Broker => "📡 Broker",
+            Tab::Settings => "⚙️ Settings",
             Tab::Help => "Help",
         }
     }
@@ -247,6 +273,13 @@ fn main() -> anyhow::Result<()> {
         win_rate_history: Vec::new(),
         consecutive_losses_history: Vec::new(),
         ws_last_seen: None,
+        // Settings page defaults: all 7 agents enabled
+        agent_enabled: vec![true; 7],
+        settings_panel_focus: 0,
+        settings_row_focus: 0,
+        risk_editing: false,
+        settings_confirm: None,
+        settings_message: None,
         ..AppState::default()
     };
     let res = run_app(&mut terminal, &mut app);
@@ -289,10 +322,12 @@ fn run_app<B: ratatui::backend::Backend>(
                             return Ok(());
                         }
                         KeyCode::Tab if !app.policy_cache_filter_active && !app.cot_filter_active && !app.trade_entry_visible => {
+                            reset_settings_if_leaving(app);
                             app.selected_tab = (app.selected_tab + 1) % NUM_TABS;
                             app.scroll_offset = 0;
                         }
                         KeyCode::BackTab if !app.policy_cache_filter_active && !app.cot_filter_active && !app.trade_entry_visible => {
+                            reset_settings_if_leaving(app);
                             app.selected_tab = if app.selected_tab == 0 {
                                 NUM_TABS - 1
                             } else {
@@ -303,6 +338,7 @@ fn run_app<B: ratatui::backend::Backend>(
                         KeyCode::Char(c @ '1'..='9')
                             if !app.policy_cache_filter_active && !app.cot_filter_active && !app.show_overlay && !app.trade_entry_visible =>
                         {
+                            reset_settings_if_leaving(app);
                             let idx = (c as usize - '1' as usize).min(NUM_TABS - 1);
                             app.selected_tab = idx;
                             app.scroll_offset = 0;
@@ -310,6 +346,7 @@ fn run_app<B: ratatui::backend::Backend>(
                         KeyCode::Char('0')
                             if !app.policy_cache_filter_active && !app.cot_filter_active && !app.show_overlay && !app.trade_entry_visible =>
                         {
+                            reset_settings_if_leaving(app);
                             app.selected_tab = Tab::Help as usize;
                             app.scroll_offset = 0;
                         }
@@ -324,6 +361,143 @@ fn run_app<B: ratatui::backend::Backend>(
                             // Cycle sort column: 0-6 for policy cache columns
                             app.sort_column = (app.sort_column + 1) % 7;
                             app.sort_ascending = !app.sort_ascending;
+                        }
+                        KeyCode::Char('b')
+                            if !app.policy_cache_filter_active && !app.cot_filter_active && !app.show_overlay && !app.trade_entry_visible =>
+                        {
+                            reset_settings_if_leaving(app);
+                            app.selected_tab = Tab::Broker as usize;
+                            app.scroll_offset = 0;
+                        }
+                        KeyCode::Char('S')
+                            if !app.policy_cache_filter_active && !app.cot_filter_active && !app.show_overlay && !app.trade_entry_visible =>
+                        {
+                            reset_settings_if_leaving(app);
+                            app.selected_tab = Tab::Settings as usize;
+                            app.scroll_offset = 0;
+                            app.settings_panel_focus = 0;
+                            app.settings_row_focus = 0;
+                        }
+                        // ── Settings page navigation ──────────────────────────
+                        KeyCode::Left
+                            if app.selected_tab == Tab::Settings as usize
+                                && !app.policy_cache_filter_active
+                                && !app.cot_filter_active
+                                && !app.show_overlay
+                                && !app.trade_entry_visible =>
+                        {
+                            if app.settings_confirm.is_some() {
+                                // Confirm dialog: Left = cancel (consistent with y/n/Esc)
+                                app.settings_confirm = None;
+                            } else if app.risk_editing {
+                                // In risk editing mode, Left decreases value
+                                adjust_risk_param(app, -1);
+                            } else {
+                                // Switch panel left
+                                app.settings_panel_focus = if app.settings_panel_focus == 0 {
+                                    3
+                                } else {
+                                    app.settings_panel_focus - 1
+                                };
+                                app.settings_row_focus = 0;
+                            }
+                        }
+                        KeyCode::Right
+                            if app.selected_tab == Tab::Settings as usize
+                                && !app.policy_cache_filter_active
+                                && !app.cot_filter_active
+                                && !app.show_overlay
+                                && !app.trade_entry_visible =>
+                        {
+                            if app.settings_confirm.is_some() {
+                                // Confirm dialog: Right = cancel
+                                app.settings_confirm = None;
+                            } else if app.risk_editing {
+                                // In risk editing mode, Right increases value
+                                adjust_risk_param(app, 1);
+                            } else {
+                                // Switch panel right
+                                app.settings_panel_focus = (app.settings_panel_focus + 1) % 4;
+                                app.settings_row_focus = 0;
+                            }
+                        }
+                        KeyCode::Up
+                            if app.selected_tab == Tab::Settings as usize
+                                && !app.policy_cache_filter_active
+                                && !app.cot_filter_active
+                                && !app.show_overlay
+                                && !app.trade_entry_visible
+                                && app.settings_confirm.is_none() =>
+                        {
+                            if app.risk_editing {
+                                // In risk editing mode, Up decreases value
+                                adjust_risk_param(app, -1);
+                            } else {
+                                // Navigate row up within focused panel
+                                let max_row = match app.settings_panel_focus {
+                                    0 => app.models.len().saturating_sub(1),
+                                    1 => 6, // 7 agents (0-6)
+                                    2 => app.skill_votes.len().saturating_sub(1),
+                                    3 => 4, // 5 risk params (0-4)
+                                    _ => 0,
+                                };
+                                if app.settings_row_focus > 0 {
+                                    app.settings_row_focus -= 1;
+                                } else {
+                                    app.settings_row_focus = max_row;
+                                }
+                            }
+                        }
+                        KeyCode::Down
+                            if app.selected_tab == Tab::Settings as usize
+                                && !app.policy_cache_filter_active
+                                && !app.cot_filter_active
+                                && !app.show_overlay
+                                && !app.trade_entry_visible
+                                && app.settings_confirm.is_none() =>
+                        {
+                            if app.risk_editing {
+                                // In risk editing mode, Down increases value
+                                adjust_risk_param(app, 1);
+                            } else {
+                                // Navigate row down within focused panel
+                                let max_row = match app.settings_panel_focus {
+                                    0 => app.models.len().saturating_sub(1),
+                                    1 => 6, // 7 agents (0-6)
+                                    2 => app.skill_votes.len().saturating_sub(1),
+                                    3 => 4, // 5 risk params (0-4)
+                                    _ => 0,
+                                };
+                                if app.settings_row_focus < max_row {
+                                    app.settings_row_focus += 1;
+                                } else {
+                                    app.settings_row_focus = 0;
+                                }
+                            }
+                        }
+                        KeyCode::Char('+') | KeyCode::Char('=')
+                            if app.selected_tab == Tab::Settings as usize
+                                && !app.policy_cache_filter_active
+                                && !app.cot_filter_active
+                                && !app.show_overlay
+                                && !app.trade_entry_visible
+                                && app.settings_confirm.is_none() =>
+                        {
+                            if app.risk_editing {
+                                adjust_risk_param(app, 1);
+                            }
+                        }
+                        KeyCode::Char('-')
+                            if app.selected_tab == Tab::Settings as usize
+                                && !app.policy_cache_filter_active
+                                && !app.cot_filter_active
+                                && !app.show_overlay
+                                && !app.trade_entry_visible
+                                && app.settings_confirm.is_none() =>
+                        {
+                            if app.risk_editing {
+                                adjust_risk_param(app, -1);
+                            }
                         }
                         KeyCode::Char('?')
                             if !app.policy_cache_filter_active && !app.cot_filter_active =>
@@ -362,6 +536,70 @@ fn run_app<B: ratatui::backend::Backend>(
                         KeyCode::Enter => {
                             if app.show_overlay {
                                 app.show_overlay = false;
+                            } else if app.selected_tab == Tab::Settings as usize
+                                && !app.policy_cache_filter_active
+                                && !app.cot_filter_active
+                            {
+                                // Settings-specific Enter
+                                if app.settings_confirm.is_some() {
+                                    handle_settings_confirm(app);
+                                } else if app.risk_editing {
+                                    // Confirm risk edit → show dialog
+                                    adjust_risk_param(app, 0);
+                                } else {
+                                    match app.settings_panel_focus {
+                                        PANEL_AGENTS => {
+                                            // Toggle agent enable/disable
+                                            if let Some(enabled) = app.agent_enabled.get_mut(app.settings_row_focus) {
+                                                *enabled = !*enabled;
+                                                let name = AGENT_NAMES.get(app.settings_row_focus).unwrap_or(&"?");
+                                                let state = if *enabled { "enabled" } else { "disabled" };
+                                                app.settings_message = Some((
+                                                    format!("{} {}", name, state),
+                                                    Instant::now(),
+                                                ));
+                                            }
+                                        }
+                                        PANEL_RISK => {
+                                            // Start risk parameter editing
+                                            app.risk_editing = true;
+                                            app.settings_message = Some((
+                                                "Editing risk parameter — use ↑↓ or +/- to adjust, Enter to confirm".to_string(),
+                                                Instant::now(),
+                                            ));
+                                        }
+                                        PANEL_MODELS => {
+                                            // Switch model (same logic as Models tab)
+                                            let client = reqwest::blocking::Client::builder()
+                                                .timeout(Duration::from_secs(5))
+                                                .build();
+                                            if let (Some(client), Some(model)) = (
+                                                client.as_ref().ok(),
+                                                app.models.get(app.settings_row_focus),
+                                            ) {
+                                                if let Some(name) = model.get("name").and_then(|n| n.as_str()) {
+                                                    let body = serde_json::json!({ "model": name });
+                                                    if let Ok(resp) = client
+                                                        .post(format!("{}/models/set", API_BASE))
+                                                        .json(&body)
+                                                        .send()
+                                                    {
+                                                        if let Ok(json) = resp.json::<serde_json::Value>() {
+                                                            if json.get("success").and_then(|s| s.as_bool()).unwrap_or(false) {
+                                                                app.current_model = Some(name.to_string());
+                                                                app.settings_message = Some((
+                                                                    format!("Switched to {}", name),
+                                                                    Instant::now(),
+                                                                ));
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        _ => {} // Skills panel: read-only
+                                    }
+                                }
                             } else if app.trade_entry_visible {
                                 // Submit trade
                                 app.trade_entry_visible = false;
@@ -462,6 +700,11 @@ fn run_app<B: ratatui::backend::Backend>(
                         KeyCode::Esc => {
                             if app.show_overlay {
                                 app.show_overlay = false;
+                            } else if app.settings_confirm.is_some() {
+                                app.settings_confirm = None;
+                            } else if app.risk_editing {
+                                app.risk_editing = false;
+                                app.settings_message = Some(("Edit cancelled.".to_string(), Instant::now()));
                             } else if app.trade_entry_visible {
                                 app.trade_entry_visible = false;
                             } else if app.policy_cache_filter_active {
@@ -480,6 +723,8 @@ fn run_app<B: ratatui::backend::Backend>(
                         KeyCode::Char('y') | KeyCode::Char('Y') => {
                             if let Some(action) = app.confirm_action.take() {
                                 run_pipeline_action(app, action);
+                            } else if app.settings_confirm.is_some() {
+                                handle_settings_confirm(app);
                             } else if app.selected_tab == Tab::Positions as usize {
                                 app.trade_entry_visible = !app.trade_entry_visible;
                             }
@@ -488,6 +733,10 @@ fn run_app<B: ratatui::backend::Backend>(
                             if app.confirm_action.take().is_some() {
                                 app.action_message =
                                     Some(("Cancelled.".to_string(), Instant::now()));
+                            } else if app.settings_confirm.is_some() {
+                                app.settings_confirm = None;
+                                app.risk_editing = false;
+                                app.settings_message = Some(("Change cancelled.".to_string(), Instant::now()));
                             }
                             app.scroll_offset = 0;
                             app.selected_model_index = 0;
@@ -627,10 +876,30 @@ fn run_app<B: ratatui::backend::Backend>(
                             && col >= area.x
                             && col < area.x + area.width
                         {
+                            reset_settings_if_leaving(app);
                             app.selected_tab = i;
                             app.scroll_offset = 0;
                             break;
                         }
+                    }
+
+                    // Find which pipeline layer box was clicked (if any)
+                    let clicked_layer = app.pipeline_layer_areas.iter().enumerate().find(|(_, area)| {
+                        row >= area.y && row < area.y + area.height
+                            && col >= area.x && col < area.x + area.width
+                    }).map(|(i, _)| i);
+                    if let Some(layer_index) = clicked_layer {
+                        reset_settings_if_leaving(app);
+                        // L1=Rules, L2=COT, L3=AgentTree, L4=COT, L5=Positions
+                        app.selected_tab = match layer_index {
+                            0 => Tab::Rules as usize,     // L1 Gate → Rules
+                            1 => Tab::Cot as usize,       // L2 Ident → COT Log
+                            2 => Tab::Tree as usize,      // L3 Debate → Agent Tree
+                            3 => Tab::Settings as usize,  // L4 Judge → Settings (agent config)
+                            4 => Tab::Positions as usize, // L5 Exec → Positions
+                            _ => Tab::Dashboard as usize,
+                        };
+                        app.scroll_offset = 0;
                     }
 
                     for area in &app.sparkline_card_areas {
@@ -897,6 +1166,50 @@ fn price_step(price: f64) -> f64 {
     } else {
         0.05
     }
+}
+
+// ── Settings Page Interaction Helpers ───────────────────────────────────────
+
+/// Reset transient settings state when leaving the Settings tab.
+fn reset_settings_if_leaving(app: &mut AppState) {
+    if app.selected_tab == Tab::Settings as usize {
+        app.risk_editing = false;
+        app.settings_confirm = None;
+    }
+}
+
+/// Handle confirming a risk parameter change from the settings confirmation dialog.
+fn handle_settings_confirm(app: &mut AppState) {
+    if app.settings_confirm.is_some() {
+        app.settings_confirm = None;
+        app.risk_editing = false;
+        app.settings_message = Some((
+            "Risk parameter updated (demo mode — backend sync pending)".to_string(),
+            Instant::now(),
+        ));
+    }
+}
+
+/// Adjust the currently selected risk parameter by a delta.
+/// In a real implementation this would POST to the backend API.
+fn adjust_risk_param(app: &mut AppState, delta: i32) {
+    // For now we show a confirmation dialog since risk changes require validation
+    let param_name = match app.settings_row_focus {
+        0 => "Max Risk/Trade",
+        1 => "Max Daily Drawdown",
+        2 => "Max Portfolio Heat",
+        3 => "Max Daily Trades",
+        4 => "Max Consecutive Losses",
+        _ => "Unknown",
+    };
+    let message = if delta == 0 {
+        format!("Confirm change to {}?", param_name)
+    } else if delta > 0 {
+        format!("Increase {}?", param_name)
+    } else {
+        format!("Decrease {}?", param_name)
+    };
+    app.settings_confirm = Some(message);
 }
 
 // ── Backend Polling ───────────────────────────────────────────────────────
