@@ -1571,3 +1571,53 @@ impl BrokerRegistry {
         self.active_broker_name.read().await.clone()
     }
 }
+
+#[cfg(test)]
+mod depth_feed_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn snapshot_populates_book_and_walks_for_fill() {
+        let engine = PaperEngine::new(PaperEngineConfig::default());
+
+        // Apply an L2 snapshot (as the fast-loop depth feed would).
+        engine
+            .apply_depth_snapshot(
+                "BTC",
+                vec![(100.0, 1.0), (99.0, 2.0)],  // bids
+                vec![(101.0, 1.0), (102.0, 2.0)], // asks
+                42,
+            )
+            .await;
+
+        let book = engine
+            .get_order_book("BTC")
+            .await
+            .expect("order book should exist after snapshot");
+        assert_eq!(book.best_bid(), Some(100.0));
+        assert_eq!(book.best_ask(), Some(101.0));
+
+        // Buy 1.5 units: fills 1.0 @ 101 + 0.5 @ 102 → VWAP = 152.0 / 1.5.
+        let fill = book.market_buy(1.5);
+        assert!(
+            fill.fully_filled,
+            "1.5 units should fully fill from 3.0 available"
+        );
+        assert!((fill.filled_qty - 1.5).abs() < 1e-9);
+        assert!(
+            (fill.avg_fill_price - (152.0 / 1.5)).abs() < 1e-6,
+            "avg fill should be the volume-weighted price, got {}",
+            fill.avg_fill_price
+        );
+        assert!(fill.slippage_pct >= 0.0);
+    }
+
+    #[tokio::test]
+    async fn realistic_paper_disabled_by_default() {
+        let engine = PaperEngine::new(PaperEngineConfig::default());
+        assert!(
+            !engine.config.realistic_paper_enabled,
+            "realistic fills must be opt-in so existing runs are unchanged"
+        );
+    }
+}

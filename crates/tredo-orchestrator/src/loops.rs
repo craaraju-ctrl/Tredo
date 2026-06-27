@@ -138,6 +138,36 @@ pub async fn fast_loop(
         // SL / TP monitoring & auto-exit
         let _ = orchestrator.execution.run(None).await;
 
+        // ── L2 depth feed (item 3a) ──────────────────────────────────────────
+        // When realistic paper fills are enabled, refresh the PaperEngine's
+        // local order book from Binance REST depth so `place_order` can walk the
+        // book instead of using fixed slippage. Throttled to ~30s to limit API
+        // load; no-op (and zero API calls) unless realistic_paper_enabled.
+        {
+            let engine = orchestrator.state.broker_registry.paper_engine();
+            if engine.config.realistic_paper_enabled {
+                static LAST_DEPTH_REFRESH: AtomicU64 = AtomicU64::new(0);
+                let now_secs = Utc::now().timestamp().max(0) as u64;
+                let last = LAST_DEPTH_REFRESH.load(Ordering::Relaxed);
+                if now_secs.saturating_sub(last) >= 30 {
+                    LAST_DEPTH_REFRESH.store(now_secs, Ordering::Relaxed);
+                    let symbols = orchestrator.state.watchlist.read().await.clone();
+                    for sym in symbols.into_iter().filter(|s| is_crypto_symbol(s)) {
+                        match fetch_binance_depth(&client, &sym, 20).await {
+                            Ok((bids, asks, update_id)) => {
+                                engine
+                                    .apply_depth_snapshot(&sym, bids, asks, update_id)
+                                    .await;
+                            }
+                            Err(e) => {
+                                warn!(symbol = %sym, error = %e, "L2 depth refresh failed");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Push live portfolio to TUI whenever positions are open (P&L marks update every fast tick)
         {
             let has_positions = orchestrator
@@ -909,6 +939,58 @@ pub async fn fetch_binance_klines(
     limit: usize,
 ) -> Result<Vec<OhlcvBar>, Box<dyn std::error::Error + Send + Sync>> {
     tredo_core::fetch_klines(client, symbol, interval, limit).await
+}
+
+/// Fetch a Binance L2 depth snapshot for `symbol` (e.g. "BTC" → BTCUSDT).
+///
+/// Returns `(bids, asks, last_update_id)` where each level is `(price, qty)`.
+/// Used by the fast loop to populate the PaperEngine's local order book so it
+/// can walk the book for realistic fills (item 3a). Bids/asks come back from
+/// Binance as `[priceStr, qtyStr]` arrays.
+pub async fn fetch_binance_depth(
+    client: &reqwest::Client,
+    symbol: &str,
+    limit: usize,
+) -> Result<(Vec<(f64, f64)>, Vec<(f64, f64)>, u64), Box<dyn std::error::Error + Send + Sync>> {
+    let binance_symbol = format!("{}USDT", symbol.to_uppercase());
+    let url = format!(
+        "https://api.binance.com/api/v3/depth?symbol={}&limit={}",
+        binance_symbol, limit
+    );
+    let resp: serde_json::Value = client
+        .get(&url)
+        .header("User-Agent", "Mozilla/5.0")
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    let parse_levels = |key: &str| -> Vec<(f64, f64)> {
+        resp[key]
+            .as_array()
+            .map(|levels| {
+                levels
+                    .iter()
+                    .filter_map(|lvl| {
+                        let arr = lvl.as_array()?;
+                        let price = arr.first()?.as_str()?.parse::<f64>().ok()?;
+                        let qty = arr.get(1)?.as_str()?.parse::<f64>().ok()?;
+                        Some((price, qty))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+
+    let bids = parse_levels("bids");
+    let asks = parse_levels("asks");
+    let update_id = resp["lastUpdateId"].as_u64().unwrap_or(0);
+
+    if bids.is_empty() && asks.is_empty() {
+        return Err(format!("empty/invalid depth response for {}", binance_symbol).into());
+    }
+    Ok((bids, asks, update_id))
 }
 
 pub async fn fetch_yahoo_ohlcv(

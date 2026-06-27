@@ -319,7 +319,18 @@ impl SharedState {
                     LiveOrderManager::open(Some(":memory:")).expect("In-memory fallback failed")
                 }),
             ),
-            broker_registry: Arc::new(BrokerRegistry::new(PaperEngineConfig::default())),
+            broker_registry: Arc::new(BrokerRegistry::new(PaperEngineConfig {
+                // Opt-in realistic Level2 fills (item 3a): when enabled, the fast
+                // loop feeds Binance depth into the order book and `place_order`
+                // walks it instead of using fixed slippage. Default off.
+                realistic_paper_enabled: std::env::var("TREDO_REALISTIC_PAPER")
+                    .map(|v| {
+                        let v = v.trim().to_ascii_lowercase();
+                        matches!(v.as_str(), "1" | "true" | "yes" | "on")
+                    })
+                    .unwrap_or(false),
+                ..PaperEngineConfig::default()
+            })),
             behavioral_psychology: Arc::new(RwLock::new(BehavioralPsychologyEngine::new())),
             service_manager: Arc::new(ServiceManager::new()),
             multi_tf_analyses: Arc::new(RwLock::new(HashMap::new())),
