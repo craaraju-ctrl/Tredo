@@ -26,10 +26,6 @@ class OhlcvBar(BaseModel):
     close: float
     volume: float
 
-    def to_dict(self) -> dict:
-        """Pydantic v2 compatible — avoids deprecated .dict()"""
-        return self.model_dump()
-
 class ForecastRequest(BaseModel):
     symbol: str
     ohlcv: List[OhlcvBar]
