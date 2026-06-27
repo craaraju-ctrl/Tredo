@@ -1,0 +1,34 @@
+# Dependabot — Automated Dependency Updates
+# Docs: https://docs.github.com/en/code-security/dependabot
+#
+# Tredo is a Cargo workspace with 18+ member crates.
+# Dependencies are managed at the workspace root via Cargo.toml and Cargo.lock.
+
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 15
+    labels:
+      - "dependencies"
+      - "rust"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      rust-patches:
+        applies-to: version-updates
+        update-types:
+          - "patch"
+        patterns:
+          - "*"
+    ignore:
+      - dependency-name: "chrono"
+        # Pinned to <0.4.40 to avoid quarter() trait conflict with arrow 51.x.
+        # Remove when lancedb upgrades arrow to >=52.
+        versions: [">=0.4.40"]
