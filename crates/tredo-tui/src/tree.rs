@@ -166,7 +166,9 @@ fn render_tree_content(f: &mut Frame, area: Rect, app: &AppState) {
         Block::default()
             .title(Span::styled(
                 " 🌳 Agent & Sub-Agent Tree ",
-                Style::default().fg(THEME.brand).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(THEME.brand)
+                    .add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(THEME.border)),
@@ -225,7 +227,9 @@ fn render_tree_live_comm(f: &mut Frame, area: Rect, app: &AppState) {
             Block::default()
                 .title(Span::styled(
                     " 📡 Live Agent Comm ",
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
                 ))
                 .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
                 .border_style(Style::default().fg(THEME.border)),
@@ -280,19 +284,17 @@ fn render_tree_live_comm(f: &mut Frame, area: Rect, app: &AppState) {
     let skip = total.saturating_sub(max_visible);
     let visible: Vec<Line> = lines.into_iter().skip(skip).collect();
 
-    let widget = List::new(visible)
-        .block(
-            Block::default()
-                .title(Span::styled(
-                    format!(
-                        " 📡 Live Agent Comm ({} msgs) ",
-                        app.live_comm_log.len()
-                    ),
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-                ))
-                .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
-                .border_style(Style::default().fg(THEME.border)),
-        );
+    let widget = List::new(visible).block(
+        Block::default()
+            .title(Span::styled(
+                format!(" 📡 Live Agent Comm ({} msgs) ", app.live_comm_log.len()),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
+            .border_style(Style::default().fg(THEME.border)),
+    );
     f.render_widget(widget, area);
 }
 

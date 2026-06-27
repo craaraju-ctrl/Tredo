@@ -3,6 +3,17 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::time::Duration;
 
+/// Returns true when the given env var is set to a truthy value
+/// (`1`, `true`, `yes`, `on`, case-insensitive).
+fn env_flag_enabled(name: &str) -> bool {
+    std::env::var(name)
+        .map(|v| {
+            let v = v.trim().to_ascii_lowercase();
+            matches!(v.as_str(), "1" | "true" | "yes" | "on")
+        })
+        .unwrap_or(false)
+}
+
 /// OHLCV bar for Kronos input
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OhlcvBar {
@@ -98,6 +109,13 @@ impl KronosForecastTool {
                 return Ok(resp);
             }
             Err(e) => {
+                // Allow disabling the subprocess fallback (e.g. in tests or in
+                // deployments that don't ship the Python CLI). When disabled, an
+                // unreachable HTTP service means "no forecast" rather than
+                // silently shelling out to `python3`.
+                if env_flag_enabled("TREDO_DISABLE_KRONOS_CLI") {
+                    return Err(e);
+                }
                 println!("[KronosForecastTool] HTTP request failed: {}. Falling back to CLI execution...", e);
             }
         }

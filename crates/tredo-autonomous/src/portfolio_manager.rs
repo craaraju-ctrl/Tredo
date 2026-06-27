@@ -121,7 +121,8 @@ impl PortfolioManagerAgent {
             return Err(format!(
                 "Position value ₹{:.2} exceeds 1/25 cap ₹{:.2} (equity={:.2}, cash={:.2})",
                 position_value, max_per_symbol, total_equity, cash_available
-            ).into());
+            )
+            .into());
         }
 
         if position_value > portfolio.cash_balance * 0.95 {

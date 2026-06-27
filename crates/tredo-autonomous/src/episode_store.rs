@@ -623,10 +623,7 @@ impl EpisodeStore {
     /// Returns the number of deleted rows.
     pub fn prune_cot_entries(&self, cutoff_ts: &str) -> Result<usize, rusqlite::Error> {
         let conn = self.conn.lock().expect("SQLite connection lock poisoned");
-        let deleted = conn.execute(
-            "DELETE FROM cot_logs WHERE ts < ?1",
-            params![cutoff_ts],
-        )?;
+        let deleted = conn.execute("DELETE FROM cot_logs WHERE ts < ?1", params![cutoff_ts])?;
         Ok(deleted)
     }
 
@@ -768,7 +765,9 @@ impl EpisodeStore {
 
     /// Fetch all closed episodes in lightweight form for KnowledgeGraph construction.
     /// Returns ClosedEpisodeLite structs with only the fields needed for graph building.
-    pub fn fetch_closed_episodes_lite(&self) -> Result<Vec<tredo_core::graph_rag::ClosedEpisodeLite>, rusqlite::Error> {
+    pub fn fetch_closed_episodes_lite(
+        &self,
+    ) -> Result<Vec<tredo_core::graph_rag::ClosedEpisodeLite>, rusqlite::Error> {
         let conn = self.conn.lock().expect("SQLite connection lock poisoned");
         let mut stmt = conn.prepare(
             "SELECT symbol, direction, outcome, pnl_pct, regret_score, market_regime,

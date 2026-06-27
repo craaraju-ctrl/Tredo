@@ -8,6 +8,7 @@ pub mod config;
 pub mod disciplined_core;
 pub mod episode;
 pub mod goals;
+pub mod graph_rag; // Knowledge Graph for relationship-based recall (symbol→regime→outcome)
 pub mod kronos_client;
 pub mod live_calendar;
 pub mod llm;
@@ -23,7 +24,6 @@ pub mod role;
 pub mod service_manager;
 pub mod skill_aggregator; // Weighted ensemble aggregation for structured SkillResult outputs
 pub mod skills; // New AgentSkill trait for building skills/tools (pluggable agent capabilities)
-pub mod graph_rag; // Knowledge Graph for relationship-based recall (symbol→regime→outcome)
 pub mod vector_memory; // Vector Memory for similarity search across trading episodes (LanceDB ANN + JSON fallback)
 
 pub use advanced_patterns::{
@@ -52,6 +52,7 @@ pub use episode::{
     MarketStateSnapshot, PostTradeReflection, ReasoningStep, TradeOutcome, TradingEpisode,
 };
 pub use goals::{TradingGoals, TradingMode};
+pub use graph_rag::{ClosedEpisodeLite, GraphNode, GraphRecallResult, KnowledgeGraph};
 pub use kronos_client::{
     KronosClient, KronosForecastRequest, KronosForecastResponse, KronosForecastTool, OhlcvBar,
 };
@@ -78,6 +79,5 @@ pub use portfolio_analytics::{
 pub use role::AgentRole;
 pub use service_manager::{ConnectionStatus, ServiceManager, ServiceStatus};
 pub use skill_aggregator::{AggregatedSignal, SkillAggregator};
-pub use graph_rag::{ClosedEpisodeLite, GraphNode, GraphRecallResult, KnowledgeGraph};
 pub use vector_memory::{SimilarResult, VectorEntry, VectorMemory};
 pub mod agentmemory;

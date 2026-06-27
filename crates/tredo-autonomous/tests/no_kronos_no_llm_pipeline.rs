@@ -176,6 +176,12 @@ async fn test_full_pipeline_no_kronos_no_llm() {
 
 #[tokio::test]
 async fn test_identifier_with_kronos_down() {
+    // Disable the Kronos CLI subprocess fallback so "service unreachable" truly
+    // means no forecast on every machine (otherwise a locally-installed
+    // `python3 kronos_service/tool.py` would satisfy the fallback and the test
+    // would be environment-dependent).
+    std::env::set_var("TREDO_DISABLE_KRONOS_CLI", "1");
+
     let (orch, db_path) = setup_no_external_deps("ident_kronos_down").await;
     seed_rich_ohlcv(&orch.state, "ETH", 3_500.0).await;
 

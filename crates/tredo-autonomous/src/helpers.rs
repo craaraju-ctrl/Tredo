@@ -309,9 +309,9 @@ pub fn compute_autonomous_levels(
     if let Some(agg) = aggregated_signal {
         if let Some(forced) = forced_direction {
             // Direction locked to debate verdict — only use agg for level tuning.
-            if forced == tredo_core::TradeDirection::Long && agg.is_bullish(None) {
-                agg_bias = agg.net_signal.abs().min(0.6);
-            } else if forced == tredo_core::TradeDirection::Short && agg.is_bearish(None) {
+            if (forced == tredo_core::TradeDirection::Long && agg.is_bullish(None))
+                || (forced == tredo_core::TradeDirection::Short && agg.is_bearish(None))
+            {
                 agg_bias = agg.net_signal.abs().min(0.6);
             }
         } else if agg.is_bullish(None) {

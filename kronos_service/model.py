@@ -1,9 +1,9 @@
 """
-Kronos Model — Real AI time-series forecasting powered by Amazon Chronos-Bolt-Tiny.
+Kronos Model — Real AI time-series forecasting powered by Amazon Chronos-Bolt.
 
 Architecture:
   - Uses ChronosBoltPipeline (zero-shot, no training required)
-  - Model: amazon/chronos-bolt-tiny (~10MB, CPU-first, ~50ms per call)
+  - Model: amazon/chronos-bolt-base (~50M params, CPU-first, ~100ms per call)
   - Cached as singleton — loads once on first call, stays in memory
   - Produces probabilistic forecasts (median + 80% / 95% confidence intervals)
 

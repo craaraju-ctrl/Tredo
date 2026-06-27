@@ -11,11 +11,7 @@ use crate::AppState;
 fn fill_bar(value: f64, width: usize, filled_char: &str, empty_char: &str) -> String {
     let filled = ((value * width as f64).round() as usize).min(width);
     let empty = width - filled;
-    format!(
-        "{}{}",
-        filled_char.repeat(filled),
-        empty_char.repeat(empty)
-    )
+    format!("{}{}", filled_char.repeat(filled), empty_char.repeat(empty))
 }
 
 pub fn render_rules(f: &mut Frame, area: Rect, app: &AppState) {
@@ -82,14 +78,20 @@ fn render_rules_panel(f: &mut Frame, area: Rect, app: &AppState) {
     ];
 
     // ─ Section 1: Boolean Toggles ─
-    lines.push(Line::from(vec![
-        Span::styled("  ┌─ BOOLEAN TOGGLES ─", Style::default().fg(Color::DarkGray)),
-    ]));
+    lines.push(Line::from(vec![Span::styled(
+        "  ┌─ BOOLEAN TOGGLES ─",
+        Style::default().fg(Color::DarkGray),
+    )]));
     lines.push(Line::from(""));
 
     // Confluence toggle
     let conf_badge = if use_confluence {
-        Span::styled("  ● ON ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+        Span::styled(
+            "  ● ON ",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        )
     } else {
         Span::styled("  ○ OFF", Style::default().fg(Color::DarkGray))
     };
@@ -109,7 +111,12 @@ fn render_rules_panel(f: &mut Frame, area: Rect, app: &AppState) {
 
     // Session timing toggle
     let sess_badge = if respect_session {
-        Span::styled("  ● ON ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+        Span::styled(
+            "  ● ON ",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        )
     } else {
         Span::styled("  ○ OFF", Style::default().fg(Color::DarkGray))
     };
@@ -151,9 +158,7 @@ fn render_rules_panel(f: &mut Frame, area: Rect, app: &AppState) {
         ),
         Span::styled(
             format!("{:.2}  ", min_confidence),
-            Style::default()
-                .fg(conf_color)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(conf_color).add_modifier(Modifier::BOLD),
         ),
         Span::styled(conf_bar, Style::default().fg(conf_color)),
     ]));
@@ -291,7 +296,9 @@ fn render_rules_panel(f: &mut Frame, area: Rect, app: &AppState) {
             Block::default()
                 .title(Span::styled(
                     " ⚖️  Discipline Rules ",
-                    Style::default().fg(THEME.brand).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(THEME.brand)
+                        .add_modifier(Modifier::BOLD),
                 ))
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(THEME.border)),
@@ -307,8 +314,8 @@ fn render_activity_panel(f: &mut Frame, area: Rect, app: &AppState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(9),  // Agent status grid
-            Constraint::Min(3),     // Recent communications
+            Constraint::Length(9), // Agent status grid
+            Constraint::Min(3),    // Recent communications
         ])
         .split(area);
 
@@ -392,7 +399,9 @@ fn render_agent_status_grid(f: &mut Frame, area: Rect, app: &AppState) {
             Block::default()
                 .title(Span::styled(
                     " 🤖 Agent Status ",
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
                 ))
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(THEME.border)),
@@ -479,10 +488,7 @@ fn render_recent_comm(f: &mut Frame, area: Rect, app: &AppState) {
                 Style::default().fg(from_col).add_modifier(Modifier::BOLD),
             ),
             Span::styled(" ", Style::default()),
-            Span::styled(
-                short_msg,
-                Style::default().fg(msg_col),
-            ),
+            Span::styled(short_msg, Style::default().fg(msg_col)),
         ]));
     }
 
@@ -494,10 +500,7 @@ fn render_recent_comm(f: &mut Frame, area: Rect, app: &AppState) {
     let widget = List::new(visible).block(
         Block::default()
             .title(Span::styled(
-                format!(
-                    " 📡 Recent Comms ({} msgs) ",
-                    app.live_comm_log.len()
-                ),
+                format!(" 📡 Recent Comms ({} msgs) ", app.live_comm_log.len()),
                 Style::default()
                     .fg(Color::DarkGray)
                     .add_modifier(Modifier::BOLD),

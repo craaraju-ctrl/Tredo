@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{watch, Semaphore};
 use tokio::time::sleep;
+use tracing::{info, warn};
 use tredo_autonomous::state::SharedState;
 use tredo_autonomous::AutonomousOrchestrator;
 use tredo_core::episode::{MarketStateSnapshot, ReasoningStep, TradingEpisode};
@@ -12,7 +13,6 @@ use tredo_core::{
     calculate_confluence_score, calculate_pivot_points, Agent, MarketContext, OhlcvBar, PivotMethod,
 };
 use tredo_eventbus::{subjects as event_subjects, EventBus, TredoEvent};
-use tracing::{info, warn};
 
 /// Read a loop cadence (in seconds) from an env var, falling back to `default`.
 ///
@@ -65,11 +65,16 @@ pub async fn fast_loop(
                 // Get latest known price for fallback
                 let old_price = {
                     let portfolio = orch_clone.state.portfolio.read().await;
-                    if let Some(pos) = portfolio.open_positions.iter().find(|pos| pos.symbol == sym) {
+                    if let Some(pos) = portfolio
+                        .open_positions
+                        .iter()
+                        .find(|pos| pos.symbol == sym)
+                    {
                         pos.current_price
                     } else {
                         let history = orch_clone.state.ohlcv_history.read().await;
-                        history.get(sym.as_str())
+                        history
+                            .get(sym.as_str())
                             .and_then(|h| h.last().map(|b| b.close))
                             .unwrap_or(20000.0)
                     }
@@ -79,9 +84,11 @@ pub async fn fast_loop(
                 let price = {
                     let _permit = sem_clone.acquire().await.expect("semaphore");
                     fetch_price(&cl, &sym, sym_is_crypto).await
-                }.unwrap_or_else(|e| {
+                }
+                .unwrap_or_else(|e| {
                     warn!(symbol = %sym, error = %e, "API error, using drift price");
-                    let drift = ((Utc::now().timestamp_micros() % 2000) as f64 - 1000.0) / 1_000_000.0;
+                    let drift =
+                        ((Utc::now().timestamp_micros() % 2000) as f64 - 1000.0) / 1_000_000.0;
                     old_price * (1.0 + drift)
                 });
 
@@ -89,22 +96,29 @@ pub async fn fast_loop(
                 let _ = orch_clone.portfolio.update_position_pnl(&sym, price).await;
 
                 // Broadcast price update via event bus
-                let _ = bus_clone.publish(
-                    &event_subjects::market_price(&sym),
-                    &TredoEvent::MarketPrice(tredo_eventbus::MarketPriceEvent {
-                        symbol: sym.clone(),
-                        price,
-                        exchange: if sym_is_crypto { "binance".into() } else { "yahoo".into() },
-                        timestamp_micros: chrono::Utc::now().timestamp_micros(),
-                    }),
-                ).await;
+                let _ = bus_clone
+                    .publish(
+                        &event_subjects::market_price(&sym),
+                        &TredoEvent::MarketPrice(tredo_eventbus::MarketPriceEvent {
+                            symbol: sym.clone(),
+                            price,
+                            exchange: if sym_is_crypto {
+                                "binance".into()
+                            } else {
+                                "yahoo".into()
+                            },
+                            timestamp_micros: chrono::Utc::now().timestamp_micros(),
+                        }),
+                    )
+                    .await;
 
                 // Broadcast price update via WebSocket
                 let price_update = serde_json::json!({
                     "type": "price",
                     "symbol": sym,
                     "price": price,
-                }).to_string();
+                })
+                .to_string();
                 let _ = orch_clone.state.update_tx.send(price_update);
 
                 // Update 1m OHLCV
@@ -150,17 +164,20 @@ pub async fn fast_loop(
             let portfolio_update = portfolio_update.to_string();
 
             // Publish portfolio snapshot via event bus
-            let port_snapshot = TredoEvent::PortfolioSnapshot(tredo_eventbus::PortfolioSnapshotEvent {
-                total_equity: p.total_equity,
-                cash_balance: p.cash_balance,
-                daily_pnl: p.daily_pnl,
-                open_positions_count: p.open_positions.len() as u32,
-                total_trades_today: p.total_trades_today,
-                winning_trades_today: p.winning_trades_today,
-                consecutive_losses: p.consecutive_losses,
-                timestamp_micros: chrono::Utc::now().timestamp_micros(),
-            });
-            let _ = bus.publish(&event_subjects::portfolio_snapshot(), &port_snapshot).await;
+            let port_snapshot =
+                TredoEvent::PortfolioSnapshot(tredo_eventbus::PortfolioSnapshotEvent {
+                    total_equity: p.total_equity,
+                    cash_balance: p.cash_balance,
+                    daily_pnl: p.daily_pnl,
+                    open_positions_count: p.open_positions.len() as u32,
+                    total_trades_today: p.total_trades_today,
+                    winning_trades_today: p.winning_trades_today,
+                    consecutive_losses: p.consecutive_losses,
+                    timestamp_micros: chrono::Utc::now().timestamp_micros(),
+                });
+            let _ = bus
+                .publish(&event_subjects::portfolio_snapshot(), &port_snapshot)
+                .await;
 
             // Publish health event via event bus
             let health = TredoEvent::Health(tredo_eventbus::HealthEvent {
@@ -170,7 +187,9 @@ pub async fn fast_loop(
                 error_message: None,
                 timestamp_micros: chrono::Utc::now().timestamp_micros(),
             });
-            let _ = bus.publish(&event_subjects::health("orchestrator"), &health).await;
+            let _ = bus
+                .publish(&event_subjects::health("orchestrator"), &health)
+                .await;
 
             let _ = orchestrator.state.update_tx.send(portfolio_update);
             log_portfolio_snapshot(&p, &orchestrator.state).await;
@@ -210,22 +229,32 @@ pub async fn medium_loop(
             let handle = tokio::spawn(async move {
                 let price = {
                     let portfolio = st.portfolio.read().await;
-                    if let Some(pos) = portfolio.open_positions.iter().find(|pos| pos.symbol == *sym) {
+                    if let Some(pos) = portfolio
+                        .open_positions
+                        .iter()
+                        .find(|pos| pos.symbol == *sym)
+                    {
                         pos.current_price
                     } else {
                         let history = st.ohlcv_history.read().await;
-                        history.get(sym.as_str())
+                        history
+                            .get(sym.as_str())
                             .and_then(|h| h.last().map(|b| b.close))
                             .unwrap_or(0.0)
                     }
                 };
                 if price > 0.0 {
-                    let meter = tredo_autonomous::market_metrics_meter::MarketMetricsMeter::new(st.clone());
+                    let meter =
+                        tredo_autonomous::market_metrics_meter::MarketMetricsMeter::new(st.clone());
                     let snap = meter.compute_and_store(&sym, price).await;
 
                     let inferred_regime = match snap.regime_hint.as_str() {
-                        "trending_bull" => Some(tredo_autonomous::types::MarketRegime::TrendingBull),
-                        "trending_bear" => Some(tredo_autonomous::types::MarketRegime::TrendingBear),
+                        "trending_bull" => {
+                            Some(tredo_autonomous::types::MarketRegime::TrendingBull)
+                        }
+                        "trending_bear" => {
+                            Some(tredo_autonomous::types::MarketRegime::TrendingBear)
+                        }
                         "volatile" => Some(tredo_autonomous::types::MarketRegime::Volatile),
                         _ => None,
                     };
@@ -306,7 +335,8 @@ pub async fn medium_loop(
                 &client,
                 &sym,
                 true, // quiet=true: skip per-agent COT for automated runs
-            ).await;
+            )
+            .await;
             let report = &outcome.report;
 
             if report.executed {
@@ -316,7 +346,11 @@ pub async fn medium_loop(
                     if let Some(ref signal) = summary.final_signal {
                         let signal_event = TredoEvent::Signal(tredo_eventbus::SignalEvent {
                             symbol: signal.symbol.clone(),
-                            action: if signal.direction == tredo_core::TradeDirection::Long { "BUY".to_string() } else { "SELL".to_string() },
+                            action: if signal.direction == tredo_core::TradeDirection::Long {
+                                "BUY".to_string()
+                            } else {
+                                "SELL".to_string()
+                            },
                             entry_price: signal.entry_price,
                             stop_loss: signal.stop_loss,
                             take_profit: signal.take_profit,
@@ -325,10 +359,9 @@ pub async fn medium_loop(
                             source: "pipeline".to_string(),
                             timestamp_micros: chrono::Utc::now().timestamp_micros(),
                         });
-                        let _ = bus.publish(
-                            &event_subjects::signal(&sym),
-                            &signal_event,
-                        ).await;
+                        let _ = bus
+                            .publish(&event_subjects::signal(&sym), &signal_event)
+                            .await;
                     }
                 }
             } else if report.success {
@@ -370,7 +403,7 @@ pub async fn medium_loop(
         // This avoids rate limiting and CPU spikes from redundant Yahoo scans.
         static CYCLE_COUNT: AtomicU64 = AtomicU64::new(0);
         let cycle = CYCLE_COUNT.fetch_add(1, Ordering::Relaxed);
-        if cycle > 0 && cycle % 30 == 0 {
+        if cycle > 0 && cycle.is_multiple_of(30) {
             info!("Scheduled 15-minute multi-timeframe data refresh...");
             refresh_multi_tf(&assets, &client, &orchestrator.state).await;
         }
@@ -397,7 +430,10 @@ pub async fn slow_loop(
     _bus: Arc<dyn EventBus>,
 ) {
     let slow_secs = loop_cadence_secs("TREDO_SLOW_LOOP_SECS", 86400);
-    info!(cadence_secs = slow_secs, "SlowLoop started — deep reflection + meta-control (engineering loop)");
+    info!(
+        cadence_secs = slow_secs,
+        "SlowLoop started — deep reflection + meta-control (engineering loop)"
+    );
 
     loop {
         tokio::select! {
@@ -1118,7 +1154,9 @@ async fn fetch_multi_tf_yahoo(
                     last_updated: Utc::now(),
                 });
             }
-            Err(e) => warn!(symbol = %symbol, label = %label, error = %e, "MTF Yahoo klines failed"),
+            Err(e) => {
+                warn!(symbol = %symbol, label = %label, error = %e, "MTF Yahoo klines failed")
+            }
             _ => {}
         }
     }
@@ -1347,7 +1385,8 @@ async fn execute_due_tasks(
         .collect();
     drop(tasks);
 
-    for (idx, name) in due_tasks {            info!(task = %name, "Running scheduled task");
+    for (idx, name) in due_tasks {
+        info!(task = %name, "Running scheduled task");
         match name.as_str() {
             "market_scan" => {
                 let _ = orchestrator.scanner.scan_watchlist().await;
@@ -1357,7 +1396,11 @@ async fn execute_due_tasks(
             }
             "portfolio_review" => {
                 let p = orchestrator.state.portfolio.read().await;
-                info!(pnl = p.daily_pnl, trades = p.total_trades_today, "Portfolio review");
+                info!(
+                    pnl = p.daily_pnl,
+                    trades = p.total_trades_today,
+                    "Portfolio review"
+                );
                 drop(p);
             }
             "goal_review" => {
@@ -1424,7 +1467,11 @@ async fn log_portfolio_snapshot_full(orchestrator: &AutonomousOrchestrator) {
         "Portfolio snapshot"
     );
     for pos in &p.open_positions {
-        let dir = if pos.direction == tredo_core::TradeDirection::Long { "LONG" } else { "SHORT" };
+        let dir = if pos.direction == tredo_core::TradeDirection::Long {
+            "LONG"
+        } else {
+            "SHORT"
+        };
         info!(
             symbol = %pos.symbol, direction = dir,
             qty = pos.quantity, entry = pos.entry_price, current = pos.current_price,

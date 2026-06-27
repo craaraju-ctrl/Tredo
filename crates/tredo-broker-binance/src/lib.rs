@@ -264,10 +264,8 @@ impl BinanceBroker {
             .unwrap_or_default()
             .as_millis() as i64;
 
-        let mut query_parts: Vec<String> = params
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect();
+        let mut query_parts: Vec<String> =
+            params.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
         query_parts.push(format!("timestamp={}", timestamp));
         query_parts.push("recvWindow=5000".to_string());
 
@@ -384,10 +382,7 @@ impl BinanceBroker {
         path: &str,
         params: &[(&str, String)],
     ) -> Result<T, BinanceError> {
-        let query_parts: Vec<String> = params
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect();
+        let query_parts: Vec<String> = params.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
         let query = query_parts.join("&");
         let url = format!("{}{}?{}", self.base_url, path, query);
 
@@ -451,8 +446,6 @@ impl BinanceBroker {
             .ok_or_else(|| BinanceError::MissingField("listen_key".to_string()))
     }
 
-
-
     /// Spawn a background task that maintains the listen key and processes
     /// WebSocket user data stream for real-time execution reports (fills).
     async fn spawn_ws_listener(&self) {
@@ -462,7 +455,10 @@ impl BinanceBroker {
                 k
             }
             Err(e) => {
-                tracing::warn!("⚠️  Failed to create listen key: {} — fills will use polling", e);
+                tracing::warn!(
+                    "⚠️  Failed to create listen key: {} — fills will use polling",
+                    e
+                );
                 return;
             }
         };
@@ -508,7 +504,8 @@ impl BinanceBroker {
                         match msg {
                             Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
                                 // Parse execution report events
-                                if let Ok(event) = serde_json::from_str::<serde_json::Value>(&text) {
+                                if let Ok(event) = serde_json::from_str::<serde_json::Value>(&text)
+                                {
                                     let event_type = event["e"].as_str().unwrap_or("");
                                     match event_type {
                                         "executionReport" => {
@@ -524,23 +521,42 @@ impl BinanceBroker {
                                             if exec_type == "TRADE" && order_status == "FILLED" {
                                                 tracing::info!(
                                                     "✅ BUY/SELL FILL: {} {} {} @ {} filled_qty={}",
-                                                    symbol, side, order_id, price, qty
+                                                    symbol,
+                                                    side,
+                                                    order_id,
+                                                    price,
+                                                    qty
                                                 );
-                                            } else if exec_type == "TRADE" && order_status == "PARTIALLY_FILLED" {
+                                            } else if exec_type == "TRADE"
+                                                && order_status == "PARTIALLY_FILLED"
+                                            {
                                                 tracing::info!(
                                                     "🔹 Partial fill: {} {} {} @ {} (cumQuote: {})",
-                                                    symbol, side, order_id, price, cum_quote
+                                                    symbol,
+                                                    side,
+                                                    order_id,
+                                                    price,
+                                                    cum_quote
                                                 );
-                                            } else if order_status == "CANCELED" || order_status == "EXPIRED" {
+                                            } else if order_status == "CANCELED"
+                                                || order_status == "EXPIRED"
+                                            {
                                                 tracing::info!(
                                                     "🗑️ Order {} {}: {} {}",
-                                                    order_id, order_status, symbol, side
+                                                    order_id,
+                                                    order_status,
+                                                    symbol,
+                                                    side
                                                 );
                                             } else if order_status == "REJECTED" {
-                                                let reject_reason = event["r"].as_str().unwrap_or("unknown");
+                                                let reject_reason =
+                                                    event["r"].as_str().unwrap_or("unknown");
                                                 tracing::warn!(
                                                     "❌ Order {} REJECTED: {} {} — reason: {}",
-                                                    order_id, symbol, side, reject_reason
+                                                    order_id,
+                                                    symbol,
+                                                    side,
+                                                    reject_reason
                                                 );
                                             }
                                         }
@@ -553,7 +569,9 @@ impl BinanceBroker {
                                 }
                             }
                             Ok(tokio_tungstenite::tungstenite::Message::Close(_)) => {
-                                tracing::warn!("🔌 Binance WS closed — will reconnect on next connect()");
+                                tracing::warn!(
+                                    "🔌 Binance WS closed — will reconnect on next connect()"
+                                );
                                 break;
                             }
                             Err(e) => {
@@ -565,7 +583,10 @@ impl BinanceBroker {
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("⚠️  Binance WS connection failed: {} — fills will use polling", e);
+                    tracing::warn!(
+                        "⚠️  Binance WS connection failed: {} — fills will use polling",
+                        e
+                    );
                 }
             }
         });
@@ -729,7 +750,11 @@ impl BinanceBroker {
             let locked = Self::parse_decimal(&balance.locked);
             let total = free + locked;
 
-            if total <= 0.0 || balance.asset == "USDT" || balance.asset == "BUSD" || balance.asset == "USDC" {
+            if total <= 0.0
+                || balance.asset == "USDT"
+                || balance.asset == "BUSD"
+                || balance.asset == "USDC"
+            {
                 continue;
             }
 
@@ -785,9 +810,8 @@ impl BrokerAdapter for BinanceBroker {
         }
 
         // Validate API key by fetching account info
-        let result: Result<AccountInfo, BinanceError> = self
-            .signed_get("/api/v3/account", &[])
-            .await;
+        let result: Result<AccountInfo, BinanceError> =
+            self.signed_get("/api/v3/account", &[]).await;
 
         match result {
             Ok(account) => {
@@ -812,9 +836,13 @@ impl BrokerAdapter for BinanceBroker {
                 tracing::info!(
                     "✅ Binance connected (account: {}, {} assets)",
                     account.account_type,
-                    account.balances.iter().filter(|b| {
-                        Self::parse_decimal(&b.free) + Self::parse_decimal(&b.locked) > 0.0
-                    }).count()
+                    account
+                        .balances
+                        .iter()
+                        .filter(|b| {
+                            Self::parse_decimal(&b.free) + Self::parse_decimal(&b.locked) > 0.0
+                        })
+                        .count()
                 );
 
                 // Spawn WebSocket listener for fill confirmations (fire-and-forget)
@@ -985,10 +1013,8 @@ impl BrokerAdapter for BinanceBroker {
             ));
         }
 
-        let params: Vec<(&str, String)> = vec![
-            ("symbol", symbol),
-            ("orderId", order_id.to_string()),
-        ];
+        let params: Vec<(&str, String)> =
+            vec![("symbol", symbol), ("orderId", order_id.to_string())];
 
         let _: BinanceOrder = self
             .signed_delete("/api/v3/order", &params)
@@ -1049,7 +1075,7 @@ impl BrokerAdapter for BinanceBroker {
         // Calculate total USDT value
         let mut total_btc_value = 0.0;
         let mut cash_usdt = 0.0;
-        
+
         for balance in &account.balances {
             let free = Self::parse_decimal(&balance.free);
             let locked = Self::parse_decimal(&balance.locked);
@@ -1113,10 +1139,8 @@ impl BrokerAdapter for BinanceBroker {
                 .ok_or_else(|| format!("Order {} not tracked locally", order_id))?
         };
 
-        let params: Vec<(&str, String)> = vec![
-            ("symbol", symbol),
-            ("orderId", order_id.to_string()),
-        ];
+        let params: Vec<(&str, String)> =
+            vec![("symbol", symbol), ("orderId", order_id.to_string())];
 
         let order: BinanceOrder = self
             .signed_get("/api/v3/order", &params)
@@ -1342,9 +1366,7 @@ impl BrokerAdapter for BinanceBroker {
             drawdown_ok: true,
             concentration_ok: true,
             portfolio_heat_ok: true,
-            warnings: vec![
-                "Risk checks delegated to Binance exchange".to_string(),
-            ],
+            warnings: vec!["Risk checks delegated to Binance exchange".to_string()],
         })
     }
 
@@ -1430,9 +1452,15 @@ mod tests {
 
     #[test]
     fn test_binance_order_type() {
-        assert_eq!(BinanceBroker::binance_order_type(OrderType::Market), "MARKET");
+        assert_eq!(
+            BinanceBroker::binance_order_type(OrderType::Market),
+            "MARKET"
+        );
         assert_eq!(BinanceBroker::binance_order_type(OrderType::Limit), "LIMIT");
-        assert_eq!(BinanceBroker::binance_order_type(OrderType::StopLoss), "STOP_LOSS_LIMIT");
+        assert_eq!(
+            BinanceBroker::binance_order_type(OrderType::StopLoss),
+            "STOP_LOSS_LIMIT"
+        );
     }
 
     #[test]

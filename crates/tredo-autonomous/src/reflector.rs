@@ -90,25 +90,35 @@ impl ReflectorAgent {
             None => "Trade still open or no outcome recorded.".to_string(),
         };
 
-        self.state.push_live_comm(
-            "Guardian",
-            "Ollama",
-            "REFLECT",
-            &format!("Requesting trade reflection for {} (Episode {})", episode.symbol, episode.episode_id),
-            Some(episode.symbol.clone()),
-        ).await;
+        self.state
+            .push_live_comm(
+                "Guardian",
+                "Ollama",
+                "REFLECT",
+                &format!(
+                    "Requesting trade reflection for {} (Episode {})",
+                    episode.symbol, episode.episode_id
+                ),
+                Some(episode.symbol.clone()),
+            )
+            .await;
 
         let reflection = llm
             .ask_for_reflection(&episode_summary, &outcome_summary)
             .await;
 
-        self.state.push_live_comm(
-            "Ollama",
-            "Guardian",
-            "ANALYZED",
-            &format!("Reflection: regret_score={:.2} | lesson={}", reflection.regret_score, reflection.lesson),
-            Some(episode.symbol.clone()),
-        ).await;
+        self.state
+            .push_live_comm(
+                "Ollama",
+                "Guardian",
+                "ANALYZED",
+                &format!(
+                    "Reflection: regret_score={:.2} | lesson={}",
+                    reflection.regret_score, reflection.lesson
+                ),
+                Some(episode.symbol.clone()),
+            )
+            .await;
 
         // Store the reflection in memory alongside the episode
         if let Ok(json) = serde_json::to_string(&reflection) {

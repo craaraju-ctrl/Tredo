@@ -527,9 +527,8 @@ fn run_app<B: ratatui::backend::Backend>(
                         {
                             let symbols = &app.watchlist;
                             if !symbols.is_empty() {
-                                if let Some(pos) = symbols
-                                    .iter()
-                                    .position(|s| s == &app.trade_entry_symbol)
+                                if let Some(pos) =
+                                    symbols.iter().position(|s| s == &app.trade_entry_symbol)
                                 {
                                     let next = if pos == 0 { symbols.len() - 1 } else { pos - 1 };
                                     if let Some(s) = symbols.get(next) {
@@ -548,9 +547,8 @@ fn run_app<B: ratatui::backend::Backend>(
                             let symbols = &app.watchlist;
                             if !symbols.is_empty() {
                                 let last = symbols.len() - 1;
-                                if let Some(pos) = symbols
-                                    .iter()
-                                    .position(|s| s == &app.trade_entry_symbol)
+                                if let Some(pos) =
+                                    symbols.iter().position(|s| s == &app.trade_entry_symbol)
                                 {
                                     let next = if pos >= last { 0 } else { pos + 1 };
                                     if let Some(s) = symbols.get(next) {
@@ -1220,7 +1218,9 @@ fn run_app<B: ratatui::backend::Backend>(
                     let mut index = HashMap::new();
                     for entry in app.cot.iter().rev() {
                         if let Some(agent) = entry.get("agent").and_then(|a| a.as_str()) {
-                            index.entry(agent.to_string()).or_insert_with(|| entry.clone());
+                            index
+                                .entry(agent.to_string())
+                                .or_insert_with(|| entry.clone());
                         }
                     }
                     app.cot_by_agent = index;
@@ -1476,10 +1476,18 @@ fn handle_ws_message(app: &mut AppState, json: serde_json::Value) {
             app.cot.push(json.clone());
             app.ws_cot_count += 1;
             // Update COT-by-agent index
-            let agent_name = json.get("agent").and_then(|a| a.as_str()).unwrap_or("?").to_string();
+            let agent_name = json
+                .get("agent")
+                .and_then(|a| a.as_str())
+                .unwrap_or("?")
+                .to_string();
             app.cot_by_agent.insert(agent_name.clone(), json.clone());
             // Extract action/reason for the live comm log
-            let action = json.get("action").and_then(|a| a.as_str()).unwrap_or("").to_string();
+            let action = json
+                .get("action")
+                .and_then(|a| a.as_str())
+                .unwrap_or("")
+                .to_string();
             let reason = json
                 .get("reason")
                 .and_then(|r| r.as_str())
@@ -1507,7 +1515,8 @@ fn handle_ws_message(app: &mut AppState, json: serde_json::Value) {
                 format!("[{}] {}", action, reason)
             };
             if !msg.trim().is_empty() {
-                app.live_comm_log.push_back((agent_name, to_agent, msg, Instant::now()));
+                app.live_comm_log
+                    .push_back((agent_name, to_agent, msg, Instant::now()));
                 if app.live_comm_log.len() > 200 {
                     app.live_comm_log.pop_front();
                 }
@@ -1771,7 +1780,9 @@ fn poll_backend_bg(api: String, selected_tab: usize, tx: mpsc::Sender<PollResult
             }
         }
         Ok(_) | Err(_) => {
-            let _ = tx.send(PollResult::Error("Backend not responding. Retrying...".into()));
+            let _ = tx.send(PollResult::Error(
+                "Backend not responding. Retrying...".into(),
+            ));
         }
     }
 

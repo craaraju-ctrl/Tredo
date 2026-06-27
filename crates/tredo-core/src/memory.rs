@@ -1,7 +1,7 @@
-use std::path::Path;
+use chrono::DateTime;
 use serde_json::json;
 use std::env;
-use chrono::DateTime;
+use std::path::Path;
 
 #[derive(Debug)]
 pub struct MemoryStore {
@@ -20,16 +20,25 @@ struct ApiRecord {
 
 impl MemoryStore {
     pub fn new(_path: impl AsRef<Path>) -> Result<Self, std::io::Error> {
-        let base_url = env::var("MEMORY_API_URL").unwrap_or_else(|_| "http://localhost:3111".to_string());
+        let base_url =
+            env::var("MEMORY_API_URL").unwrap_or_else(|_| "http://localhost:3111".to_string());
         // Try checking health with a short timeout. If offline, it fails instantly or within 10ms.
         let is_online = ureq::get(&format!("{}/health", base_url))
             .timeout(std::time::Duration::from_millis(10))
             .call()
             .is_ok();
-        Ok(Self { base_url, is_online })
+        Ok(Self {
+            base_url,
+            is_online,
+        })
     }
 
-    fn store_record(&self, id: &str, content: &str, content_type: &str) -> Result<(), std::io::Error> {
+    fn store_record(
+        &self,
+        id: &str,
+        content: &str,
+        content_type: &str,
+    ) -> Result<(), std::io::Error> {
         if !self.is_online {
             return Ok(());
         }
@@ -47,9 +56,10 @@ impl MemoryStore {
                 if resp.status() == 200 || resp.status() == 201 {
                     Ok(())
                 } else {
-                    Err(std::io::Error::other(
-                        format!("Memory service returned status {}", resp.status()),
-                    ))
+                    Err(std::io::Error::other(format!(
+                        "Memory service returned status {}",
+                        resp.status()
+                    )))
                 }
             }
             Err(e) => {
@@ -66,7 +76,8 @@ impl MemoryStore {
         let url = format!("{}/records/{}", self.base_url, urlencoding::encode(id));
         match ureq::get(&url).call() {
             Ok(resp) => {
-                let record: ApiRecord = resp.into_json()
+                let record: ApiRecord = resp
+                    .into_json()
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
                 Ok(Some(record.content))
             }
@@ -109,7 +120,8 @@ impl MemoryStore {
         let url = format!("{}/records?type=episode&limit=100000", self.base_url);
         match ureq::get(&url).call() {
             Ok(resp) => {
-                let records: Vec<ApiRecord> = resp.into_json()
+                let records: Vec<ApiRecord> = resp
+                    .into_json()
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
                 Ok(records)
             }
@@ -135,7 +147,10 @@ impl MemoryStore {
         Ok(ids)
     }
 
-    pub fn load_episodes_since(&self, since_ts: i64) -> Result<Vec<(String, String)>, std::io::Error> {
+    pub fn load_episodes_since(
+        &self,
+        since_ts: i64,
+    ) -> Result<Vec<(String, String)>, std::io::Error> {
         let records = self.get_all_episodes()?;
         let mut episodes = Vec::new();
 

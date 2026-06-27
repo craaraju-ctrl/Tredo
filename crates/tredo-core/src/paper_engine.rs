@@ -208,8 +208,7 @@ pub struct DepthLevel {
 /// Asks are stored lowest-price-first (best ask priority).
 /// Use `apply_snapshot` to initialize from a full depth snapshot,
 /// then `apply_depth_update` for incremental Binance-style updates.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LocalOrderBook {
     /// Bids sorted descending by price
     pub bids: Vec<DepthLevel>,
@@ -218,7 +217,6 @@ pub struct LocalOrderBook {
     /// Last update ID for consistency checking with Binance-style streams
     pub last_update_id: u64,
 }
-
 
 impl LocalOrderBook {
     /// Create a new empty order book.
@@ -233,25 +231,42 @@ impl LocalOrderBook {
         self.bids = bids
             .into_iter()
             .filter(|(_, qty)| *qty > 0.0)
-            .map(|(p, q)| DepthLevel { price: p, quantity: q })
+            .map(|(p, q)| DepthLevel {
+                price: p,
+                quantity: q,
+            })
             .collect();
         self.asks = asks
             .into_iter()
             .filter(|(_, qty)| *qty > 0.0)
-            .map(|(p, q)| DepthLevel { price: p, quantity: q })
+            .map(|(p, q)| DepthLevel {
+                price: p,
+                quantity: q,
+            })
             .collect();
         // Sort bids descending (best bid first), asks ascending (best ask first)
-        self.bids
-            .sort_by(|a, b| b.price.partial_cmp(&a.price).unwrap_or(std::cmp::Ordering::Equal));
-        self.asks
-            .sort_by(|a, b| a.price.partial_cmp(&b.price).unwrap_or(std::cmp::Ordering::Equal));
+        self.bids.sort_by(|a, b| {
+            b.price
+                .partial_cmp(&a.price)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        self.asks.sort_by(|a, b| {
+            a.price
+                .partial_cmp(&b.price)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         self.last_update_id = update_id;
     }
 
     /// Apply incremental depth updates (Binance @depth stream style).
     /// Levels with quantity=0.0 are removed. Positive quantities update existing or insert new.
     /// After applying, re-sorts both sides to maintain correct ordering.
-    pub fn apply_depth_update(&mut self, bids: Vec<(f64, f64)>, asks: Vec<(f64, f64)>, update_id: u64) {
+    pub fn apply_depth_update(
+        &mut self,
+        bids: Vec<(f64, f64)>,
+        asks: Vec<(f64, f64)>,
+        update_id: u64,
+    ) {
         Self::apply_level_updates(&mut self.bids, bids, false);
         Self::apply_level_updates(&mut self.asks, asks, true);
         self.last_update_id = update_id;
@@ -265,7 +280,11 @@ impl LocalOrderBook {
             .collect();
 
         // Remove levels where update quantity is zero
-        levels.retain(|l| !update_map.get(&price_to_key(l.price)).is_some_and(|&q| q <= 0.0));
+        levels.retain(|l| {
+            !update_map
+                .get(&price_to_key(l.price))
+                .is_some_and(|&q| q <= 0.0)
+        });
 
         // Update existing levels and add new ones
         for (key, qty) in update_map {
@@ -276,15 +295,26 @@ impl LocalOrderBook {
             if let Some(existing) = levels.iter_mut().find(|l| (l.price - price).abs() < 1e-8) {
                 existing.quantity = qty;
             } else {
-                levels.push(DepthLevel { price, quantity: qty });
+                levels.push(DepthLevel {
+                    price,
+                    quantity: qty,
+                });
             }
         }
 
         // Re-sort
         if is_asks {
-            levels.sort_by(|a, b| a.price.partial_cmp(&b.price).unwrap_or(std::cmp::Ordering::Equal));
+            levels.sort_by(|a, b| {
+                a.price
+                    .partial_cmp(&b.price)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
         } else {
-            levels.sort_by(|a, b| b.price.partial_cmp(&a.price).unwrap_or(std::cmp::Ordering::Equal));
+            levels.sort_by(|a, b| {
+                b.price
+                    .partial_cmp(&a.price)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
         }
     }
 
@@ -292,7 +322,10 @@ impl LocalOrderBook {
     /// Returns average fill price, filled quantity, and slippage % from top of book.
     pub fn market_buy(&self, qty: f64) -> FillResult {
         if qty <= 0.0 || self.asks.is_empty() {
-            let best = self.asks.first().copied().unwrap_or(DepthLevel { price: 0.0, quantity: 0.0 });
+            let best = self.asks.first().copied().unwrap_or(DepthLevel {
+                price: 0.0,
+                quantity: 0.0,
+            });
             return FillResult {
                 avg_fill_price: best.price,
                 filled_qty: 0.0,
@@ -318,7 +351,11 @@ impl LocalOrderBook {
         }
 
         let filled = qty - remaining;
-        let avg_price = if filled > 0.0 { total_cost / filled } else { best_ask };
+        let avg_price = if filled > 0.0 {
+            total_cost / filled
+        } else {
+            best_ask
+        };
         let slippage = if best_ask > 0.0 {
             ((avg_price - best_ask) / best_ask) * 100.0
         } else {
@@ -337,7 +374,10 @@ impl LocalOrderBook {
     /// Simulate a market SELL: walk the bid side starting from best (highest) bid.
     pub fn market_sell(&self, qty: f64) -> FillResult {
         if qty <= 0.0 || self.bids.is_empty() {
-            let best = self.bids.first().copied().unwrap_or(DepthLevel { price: 0.0, quantity: 0.0 });
+            let best = self.bids.first().copied().unwrap_or(DepthLevel {
+                price: 0.0,
+                quantity: 0.0,
+            });
             return FillResult {
                 avg_fill_price: best.price,
                 filled_qty: 0.0,
@@ -363,7 +403,11 @@ impl LocalOrderBook {
         }
 
         let filled = qty - remaining;
-        let avg_price = if filled > 0.0 { total_proceeds / filled } else { best_bid };
+        let avg_price = if filled > 0.0 {
+            total_proceeds / filled
+        } else {
+            best_bid
+        };
         let slippage = if best_bid > 0.0 {
             ((best_bid - avg_price) / best_bid) * 100.0
         } else {
@@ -514,7 +558,7 @@ pub struct PaperEngineConfig {
     pub max_portfolio_heat_pct: f64, // % total risk exposure
     pub max_leverage: f64,
     pub slippage_model: SlippageModel,
-    pub commission_pct: f64,            // % commission per trade
+    pub commission_pct: f64, // % commission per trade
     /// Enable Level2 realistic fill simulation. When true, place_order
     /// walks the local order book to determine fills instead of fixed slippage.
     pub realistic_paper_enabled: bool,
@@ -524,10 +568,10 @@ impl Default for PaperEngineConfig {
     fn default() -> Self {
         Self {
             initial_balance: 100_000.0,
-            max_position_size_pct: 4.0,    // 1/25 = 4% max per position
+            max_position_size_pct: 4.0, // 1/25 = 4% max per position
             max_daily_loss_pct: 3.0,
             max_drawdown_pct: 10.0,
-            max_concentration_pct: 4.0,    // 1/25 = 4% max per symbol
+            max_concentration_pct: 4.0, // 1/25 = 4% max per symbol
             max_portfolio_heat_pct: 30.0,
             max_leverage: 1.0,
             slippage_model: SlippageModel::Fixed(0.01), // 1 paisa slippage
@@ -706,7 +750,12 @@ impl PaperEngine {
 
     /// Estimate realistic slippage for a market order using the local order book.
     /// Returns None if the book is not populated for this symbol.
-    pub async fn estimate_realistic_slippage(&self, symbol: &str, qty: f64, is_buy: bool) -> Option<FillResult> {
+    pub async fn estimate_realistic_slippage(
+        &self,
+        symbol: &str,
+        qty: f64,
+        is_buy: bool,
+    ) -> Option<FillResult> {
         let books = self.order_books.read().await;
         let book = books.get(symbol)?;
         if book.bids.is_empty() || book.asks.is_empty() {
@@ -778,12 +827,22 @@ impl PaperEngine {
                         );
                         (r.avg_fill_price, Some(r))
                     }
-                    _ => (apply_slippage(&self.config.slippage_model, market_price, request.direction), None),
+                    _ => (
+                        apply_slippage(
+                            &self.config.slippage_model,
+                            market_price,
+                            request.direction,
+                        ),
+                        None,
+                    ),
                 }
             }
             OrderType::Limit => (request.price.unwrap_or(market_price), None),
             OrderType::StopLoss | OrderType::StopLossLimit => (market_price, None),
-            _ => (apply_slippage(&self.config.slippage_model, market_price, request.direction), None),
+            _ => (
+                apply_slippage(&self.config.slippage_model, market_price, request.direction),
+                None,
+            ),
         };
 
         // Use the effective filled quantity from LOB simulation, or the full requested qty

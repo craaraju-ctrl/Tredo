@@ -174,7 +174,7 @@ async fn simulate_losing_trades(orch: &AutonomousOrchestrator, count: usize, sym
         // Add a losing position directly
         {
             let mut portfolio = orch.state.portfolio.write().await;
-            let loss = entry * 0.02 * -1.0; // 2% loss per trade
+            let loss = -(entry * 0.02); // 2% loss per trade
             portfolio.open_positions.push(OpenPosition {
                 symbol: symbol.to_string(),
                 direction: TradeDirection::Long,
@@ -255,7 +255,7 @@ async fn debug_100_trades_blocking_points() {
         if i % 5 == 0 {
             // Vary from 0.30 to 0.85 to hit different confluence thresholds
             let conf = 0.30 + ((i / 5) as f64 * 0.03) % 0.60;
-            seed_aggregated_signal(&orch.state, conf.min(0.85));
+            seed_aggregated_signal(&orch.state, conf.min(0.85)).await;
         }
 
         // ── Every 25 trades: simulate accumulated losses ──
@@ -318,7 +318,7 @@ async fn debug_100_trades_blocking_points() {
     println!("║      100 TRADES — BLOCKING POINT DISTRIBUTION                ║");
     println!("╚═══════════════════════════════════════════════════════════════╝\n");
 
-    println!("  {:<10} {}", "Category", "Count");
+    println!("  {:<10} Count", "Category");
     println!("  {}", "-".repeat(50));
     println!("  {:<10} {:>5}", "EXECUTED", trades_executed);
     println!("  {:<10} {:>5}", "BLOCKED", trades_blocked);

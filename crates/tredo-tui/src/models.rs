@@ -54,9 +54,17 @@ fn agent_icon(name: &str) -> &'static str {
 /// Action color for comm messages
 fn action_color(msg: &str) -> Color {
     let upper = msg.to_uppercase();
-    if upper.contains("PASS") || upper.contains("BUY") || upper.contains("ANALYZED") || upper.contains("OK") {
+    if upper.contains("PASS")
+        || upper.contains("BUY")
+        || upper.contains("ANALYZED")
+        || upper.contains("OK")
+    {
         Color::Green
-    } else if upper.contains("FAIL") || upper.contains("HALT") || upper.contains("ABORT") || upper.contains("REJECT") {
+    } else if upper.contains("FAIL")
+        || upper.contains("HALT")
+        || upper.contains("ABORT")
+        || upper.contains("REJECT")
+    {
         Color::Red
     } else if upper.contains("HOLD") || upper.contains("SKIP") || upper.contains("WAIT") {
         Color::Yellow
@@ -73,10 +81,7 @@ pub fn render_models(f: &mut Frame, area: Rect, app: &AppState) {
     // ── Split: 38% model list | 62% live comm ──────────────────────────────
     let split = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(38),
-            Constraint::Percentage(62),
-        ])
+        .constraints([Constraint::Percentage(38), Constraint::Percentage(62)])
         .split(area);
 
     render_model_list(f, split[0], app, current);
@@ -90,27 +95,43 @@ fn render_model_list(f: &mut Frame, area: Rect, app: &AppState, current: &str) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(5),  // header block
-            Constraint::Min(3),     // scrollable model list
+            Constraint::Length(5), // header block
+            Constraint::Min(3),    // scrollable model list
         ])
         .split(area);
 
     // ── Header ──
     let ws_dot = if app.ws_connected { "🟢" } else { "🔴" };
     let header_lines = vec![
-        Line::from(vec![
-            Span::styled("🤖 LLM Model Selection", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        ]),
+        Line::from(vec![Span::styled(
+            "🤖 LLM Model Selection",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )]),
         Line::from(""),
         Line::from(vec![
             Span::styled("Active: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(current, Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                current,
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(vec![
             Span::styled(ws_dot, Style::default()),
             Span::styled(
-                if app.ws_connected { " WS Connected" } else { " WS Disconnected" },
-                Style::default().fg(if app.ws_connected { Color::Green } else { Color::Red }),
+                if app.ws_connected {
+                    " WS Connected"
+                } else {
+                    " WS Disconnected"
+                },
+                Style::default().fg(if app.ws_connected {
+                    Color::Green
+                } else {
+                    Color::Red
+                }),
             ),
             Span::styled(
                 format!("  |  {} COT events", app.ws_cot_count),
@@ -124,7 +145,12 @@ fn render_model_list(f: &mut Frame, area: Rect, app: &AppState, current: &str) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(THEME.border))
-                .title(Span::styled(" 🤖 Models ", Style::default().fg(THEME.brand).add_modifier(Modifier::BOLD))),
+                .title(Span::styled(
+                    " 🤖 Models ",
+                    Style::default()
+                        .fg(THEME.brand)
+                        .add_modifier(Modifier::BOLD),
+                )),
         )
         .wrap(Wrap { trim: true });
     f.render_widget(header, chunks[0]);
@@ -159,7 +185,12 @@ fn render_model_list(f: &mut Frame, area: Rect, app: &AppState, current: &str) {
                 ListItem::new(Line::from(vec![
                     Span::styled(prefix, Style::default().fg(row_fg).add_modifier(row_mod)),
                     Span::styled(name, Style::default().fg(row_fg).add_modifier(row_mod)),
-                    Span::styled(active_badge, Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        active_badge,
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled(
                         format!("  ({})", size),
                         Style::default().fg(Color::DarkGray),
@@ -169,12 +200,17 @@ fn render_model_list(f: &mut Frame, area: Rect, app: &AppState, current: &str) {
             .collect()
     };
 
-    let list = List::new(items).block(
-        Block::default()
-            .title(Span::styled(" Available Models ", Style::default().fg(Color::DarkGray)))
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(THEME.border)),
-    ).highlight_style(Style::default().fg(Color::Yellow));
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    " Available Models ",
+                    Style::default().fg(Color::DarkGray),
+                ))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(THEME.border)),
+        )
+        .highlight_style(Style::default().fg(Color::Yellow));
     f.render_widget(list, chunks[1]);
 }
 
@@ -185,8 +221,8 @@ fn render_live_comm(f: &mut Frame, area: Rect, app: &AppState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // legend/filter bar
-            Constraint::Min(3),     // messages
+            Constraint::Length(3), // legend/filter bar
+            Constraint::Min(3),    // messages
         ])
         .split(area);
 
@@ -197,7 +233,10 @@ fn render_live_comm(f: &mut Frame, area: Rect, app: &AppState) {
         ("⚡ Executer", Color::Magenta),
         ("🛡 Guardian", Color::Red),
     ];
-    let mut legend_spans = vec![Span::styled("  Agents: ", Style::default().fg(Color::DarkGray))];
+    let mut legend_spans = vec![Span::styled(
+        "  Agents: ",
+        Style::default().fg(Color::DarkGray),
+    )];
     for (label, color) in &agent_list_str {
         legend_spans.push(Span::styled(*label, Style::default().fg(*color)));
         legend_spans.push(Span::styled("  ", Style::default()));
@@ -205,19 +244,19 @@ fn render_live_comm(f: &mut Frame, area: Rect, app: &AppState) {
     let legend_line = Line::from(legend_spans);
 
     let comm_count = app.live_comm_log.len();
-    let subtitle = Line::from(vec![
-        Span::styled(
-            format!("  {} messages in buffer  |  ↑↓ to scroll  |  Live WS feed", comm_count),
-            Style::default().fg(Color::DarkGray),
+    let subtitle = Line::from(vec![Span::styled(
+        format!(
+            "  {} messages in buffer  |  ↑↓ to scroll  |  Live WS feed",
+            comm_count
         ),
-    ]);
+        Style::default().fg(Color::DarkGray),
+    )]);
 
-    let legend_para = Paragraph::new(vec![legend_line, subtitle])
-        .block(
-            Block::default()
-                .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
-                .border_style(Style::default().fg(THEME.border)),
-        );
+    let legend_para = Paragraph::new(vec![legend_line, subtitle]).block(
+        Block::default()
+            .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
+            .border_style(Style::default().fg(THEME.border)),
+    );
     f.render_widget(legend_para, chunks[0]);
 
     // ── Messages ──
@@ -228,7 +267,9 @@ fn render_live_comm(f: &mut Frame, area: Rect, app: &AppState) {
             Line::from(""),
             Line::from(Span::styled(
                 "  ⏳ Waiting for agent communications...",
-                Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
             )),
             Line::from(""),
             Line::from(Span::styled(
@@ -256,7 +297,9 @@ fn render_live_comm(f: &mut Frame, area: Rect, app: &AppState) {
             Block::default()
                 .title(Span::styled(
                     " 📡 Live Agent Communications ",
-                    Style::default().fg(THEME.brand).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(THEME.brand)
+                        .add_modifier(Modifier::BOLD),
                 ))
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(THEME.border)),
@@ -301,10 +344,7 @@ fn render_live_comm(f: &mut Frame, area: Rect, app: &AppState) {
             Span::styled(" ──▶ ", Style::default().fg(Color::DarkGray)),
             Span::styled(to_icon, Style::default()),
             Span::styled(" ", Style::default()),
-            Span::styled(
-                to.clone(),
-                Style::default().fg(to_color),
-            ),
+            Span::styled(to.clone(), Style::default().fg(to_color)),
         ]));
 
         // Row 2: message body (indented)
@@ -332,15 +372,16 @@ fn render_live_comm(f: &mut Frame, area: Rect, app: &AppState) {
     let skip = total_lines.saturating_sub(max_visible);
     let visible: Vec<Line> = lines.into_iter().skip(skip).collect();
 
-    let msg_widget = List::new(visible)
-        .block(
-            Block::default()
-                .title(Span::styled(
-                    " 📡 Live Agent Communications ",
-                    Style::default().fg(THEME.brand).add_modifier(Modifier::BOLD),
-                ))
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(THEME.border)),
-        );
+    let msg_widget = List::new(visible).block(
+        Block::default()
+            .title(Span::styled(
+                " 📡 Live Agent Communications ",
+                Style::default()
+                    .fg(THEME.brand)
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(THEME.border)),
+    );
     f.render_widget(msg_widget, chunks[1]);
 }

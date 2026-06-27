@@ -701,7 +701,11 @@ mod tests {
         CycleMetrics {
             cycle_number: n,
             symbol: "BTC".to_string(),
-            decision: if hold { "HOLD".to_string() } else { "BUY/SELL".to_string() },
+            decision: if hold {
+                "HOLD".to_string()
+            } else {
+                "BUY/SELL".to_string()
+            },
             confidence: 0.7,
             confluence: 0.6,
             regret_score: regret,
@@ -723,7 +727,11 @@ mod tests {
         // 25 cycles → 3 buckets (10, 10, 5)
         let mut cycles = Vec::new();
         for i in 0..25 {
-            let outcome = if i % 2 == 0 { Some("WIN") } else { Some("LOSS") };
+            let outcome = if i % 2 == 0 {
+                Some("WIN")
+            } else {
+                Some("LOSS")
+            };
             cycles.push(mk_cycle(i, Some(0.4), outcome, false));
         }
         let buckets = SelfEvolutionValidator::compute_buckets(&cycles);
@@ -745,7 +753,10 @@ mod tests {
         }
         let buckets = SelfEvolutionValidator::compute_buckets(&cycles);
         let (first, second) = SelfEvolutionValidator::compute_half_regret(&buckets);
-        assert!(first > second, "first-half regret should exceed second-half");
+        assert!(
+            first > second,
+            "first-half regret should exceed second-half"
+        );
         assert!((first - 0.8).abs() < 1e-9);
         assert!((second - 0.2).abs() < 1e-9);
     }
@@ -760,8 +771,14 @@ mod tests {
         }
         let buckets = SelfEvolutionValidator::compute_buckets(&cycles);
         let (first, second) = SelfEvolutionValidator::compute_half_win_rates(&buckets);
-        assert!((first - 1.0).abs() < 1e-9, "first half should be 100% win rate");
-        assert!((second - 0.0).abs() < 1e-9, "second half should be 0% win rate");
+        assert!(
+            (first - 1.0).abs() < 1e-9,
+            "first half should be 100% win rate"
+        );
+        assert!(
+            (second - 0.0).abs() < 1e-9,
+            "second half should be 0% win rate"
+        );
     }
 
     #[test]

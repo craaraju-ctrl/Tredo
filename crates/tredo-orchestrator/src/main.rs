@@ -17,10 +17,10 @@ use tokio::signal;
 use tokio::sync::{watch, Mutex as TokioMutex};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
+use tracing::{error, info, warn};
 use tredo_autonomous::state::initialize_autonomous_system;
 use tredo_core::paper_engine::TradingMode;
 use tredo_eventbus::{self, subjects as event_subjects, EventBus, TredoEvent};
-use tracing::{info, warn, error};
 
 // ── Loop Manager to dynamically start and stop the background temporal loops ──
 struct LoopManager {
@@ -208,7 +208,12 @@ async fn restore_portfolio_state(state: &tredo_autonomous::state::SharedState) -
                 Ok(restored) => {
                     let mut portfolio = state.portfolio.write().await;
                     *portfolio = restored;
-                    info!(equity = portfolio.total_equity, cash = portfolio.cash_balance, positions = portfolio.open_positions.len(), "Portfolio restored");
+                    info!(
+                        equity = portfolio.total_equity,
+                        cash = portfolio.cash_balance,
+                        positions = portfolio.open_positions.len(),
+                        "Portfolio restored"
+                    );
                     true
                 }
                 Err(e) => {
@@ -246,7 +251,13 @@ async fn graceful_shutdown(orchestrator: &tredo_autonomous::AutonomousOrchestrat
     loops::save_portfolio_state(&orchestrator.state).await;
     save_watchlist(&orchestrator.state).await;
     let p = orchestrator.state.portfolio.read().await;
-    info!(equity = p.total_equity, pnl = p.daily_pnl, trades = p.total_trades_today, open = p.open_positions.len(), "Final Portfolio");
+    info!(
+        equity = p.total_equity,
+        pnl = p.daily_pnl,
+        trades = p.total_trades_today,
+        open = p.open_positions.len(),
+        "Final Portfolio"
+    );
     drop(p);
     info!("tredo terminated. Goodbye.");
 }
@@ -1068,26 +1079,23 @@ async fn get_market_depth(
             binance_symbol
         );
 
-        match client
+        if let Ok(resp) = client
             .get(&url)
             .header("User-Agent", "Mozilla/5.0")
             .timeout(std::time::Duration::from_secs(5))
             .send()
             .await
         {
-            Ok(resp) => {
-                if resp.status().is_success() {
-                    if let Ok(json) = resp.json::<serde_json::Value>().await {
-                        return Json(serde_json::json!({
-                            "symbol": sym,
-                            "bids": json["bids"],
-                            "asks": json["asks"],
-                            "source": "binance"
-                        }));
-                    }
+            if resp.status().is_success() {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    return Json(serde_json::json!({
+                        "symbol": sym,
+                        "bids": json["bids"],
+                        "asks": json["asks"],
+                        "source": "binance"
+                    }));
                 }
             }
-            Err(_) => {}
         }
     }
 
@@ -1107,14 +1115,8 @@ async fn get_market_depth(
         let bid_price = price * (1.0 - step * 0.00015);
         let ask_qty = (2.0 - step * 0.12).max(0.05) + (i as f64 * 0.01).sin() * 0.5;
         let bid_qty = (2.0 - step * 0.12).max(0.05) + (i as f64 * 0.01).cos() * 0.5;
-        asks.push(vec![
-            format!("{:.2}", ask_price),
-            format!("{:.4}", ask_qty),
-        ]);
-        bids.push(vec![
-            format!("{:.2}", bid_price),
-            format!("{:.4}", bid_qty),
-        ]);
+        asks.push(vec![format!("{:.2}", ask_price), format!("{:.4}", ask_qty)]);
+        bids.push(vec![format!("{:.2}", bid_price), format!("{:.4}", bid_qty)]);
     }
     // Bids stay descending (best bid first) to match Binance format
 
@@ -1515,8 +1517,9 @@ async fn main() {
     // Initialize structured logging
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "tredo_orchestrator=info,tredo_autonomous=info,tredo_core=info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                "tredo_orchestrator=info,tredo_autonomous=info,tredo_core=info".into()
+            }),
         )
         .init();
 
@@ -2126,7 +2129,11 @@ async fn main() {
             match tokio::net::TcpListener::bind(try_addr).await {
                 Ok(l) => {
                     if current_port != port {
-                        warn!(requested = port, actual = current_port, "Port in use, using alternative");
+                        warn!(
+                            requested = port,
+                            actual = current_port,
+                            "Port in use, using alternative"
+                        );
                     }
                     break l;
                 }

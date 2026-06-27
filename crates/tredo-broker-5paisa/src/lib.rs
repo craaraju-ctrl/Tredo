@@ -464,6 +464,9 @@ impl FivePaisaBroker {
     }
 
     /// Map Exchange string for 5Paisa.
+    /// NOTE: branches are intentionally identical for now — both NSE and the
+    /// default resolve to "N" until the master contract list is wired in.
+    #[allow(clippy::if_same_then_else)]
     fn exchange_code(symbol: &str) -> &str {
         let sym = symbol.to_uppercase();
         if sym.ends_with(".NS") || sym == "NIFTY" || sym == "BANKNIFTY" || sym == "FINNIFTY" {
@@ -473,6 +476,9 @@ impl FivePaisaBroker {
         }
     }
 
+    /// NOTE: branches intentionally identical until exchange-type resolution
+    /// (Cash vs F&O) is implemented from the master contract list.
+    #[allow(clippy::if_same_then_else)]
     fn exchange_type(symbol: &str) -> &str {
         let sym = symbol.to_uppercase();
         if sym.ends_with(".NS") || sym == "NIFTY" || sym == "BANKNIFTY" || sym == "FINNIFTY" {

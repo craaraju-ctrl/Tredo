@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::RwLock;
 
 use crate::episode_store::EpisodeStore;
 use crate::meta_control::EvolvedMetaControl;
@@ -73,7 +73,10 @@ impl OutcomeProcessor {
     /// Registers the pre-trade context on order execution.
     /// Stores it in a lock-free thread-safe map until the trade closes.
     pub async fn register_pending_trade(&self, snapshot: PreTradeSnapshot) {
-        self.pending_snapshots.write().await.insert(snapshot.episode_id.clone(), snapshot);
+        self.pending_snapshots
+            .write()
+            .await
+            .insert(snapshot.episode_id.clone(), snapshot);
     }
 
     /// Processes a closed trade, executes the learning backpropagation,

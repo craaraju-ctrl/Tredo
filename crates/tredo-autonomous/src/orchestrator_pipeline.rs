@@ -48,6 +48,7 @@ pub async fn send_pipeline_event_to_metrics(
 /// NOTE: This is wired into the OutcomeProcessor at trade CLOSE time.
 /// Currently not called from the pipeline (trade outcomes sent at close, not open).
 #[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
 pub async fn send_trade_outcome_to_metrics(
     symbol: &str,
     direction: &str,
@@ -344,7 +345,10 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
         )
         .await
         .unwrap_or_else(|_| {
-            println!("⏱ HardRulesGate timed out after 10s for {} — blocking", symbol);
+            println!(
+                "⏱ HardRulesGate timed out after 10s for {} — blocking",
+                symbol
+            );
             crate::types::HardRulesGateResult {
                 passed: false,
                 failed_rules: vec![],
@@ -773,27 +777,59 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
         // Instead of 17 per-agent COT entries per run, push ONE summary entry
         // with all layer results embedded. Per-agent add_cot_step calls above
         // still broadcast to TUI in real-time but don't persist to SQLite.
-        let exec_dur = if total_ms as f64 - t1_dur - t2_dur - t3_dur - t4_dur > 0.0 { total_ms as f64 - t1_dur - t2_dur - t3_dur - t4_dur } else { 0.0 };
+        let exec_dur = if total_ms as f64 - t1_dur - t2_dur - t3_dur - t4_dur > 0.0 {
+            total_ms as f64 - t1_dur - t2_dur - t3_dur - t4_dur
+        } else {
+            0.0
+        };
         let hard_rules_reason = format!("{} rules checked", gate_result.total_rules_checked);
         let identifier_reason = format!("Confluence: {:.1}%", confluence * 100.0);
-        let verifier_reason = format!("Heat: {:.1}%, DD: {:.1}%", risk.portfolio_heat * 100.0, risk.daily_drawdown_pct * 100.0);
-        let debate_reason = format!("Action: {}, conf: {:.1}%", verdict.action, verdict.confidence * 100.0);
+        let verifier_reason = format!(
+            "Heat: {:.1}%, DD: {:.1}%",
+            risk.portfolio_heat * 100.0,
+            risk.daily_drawdown_pct * 100.0
+        );
+        let debate_reason = format!(
+            "Action: {}, conf: {:.1}%",
+            verdict.action,
+            verdict.confidence * 100.0
+        );
         let judge_reason = format!("Veto: {}, Action: {}", verdict.judge_veto, verdict.action);
         let summary_layers: Vec<(&str, &str, f64, &str)> = vec![
-            ("HardRulesGate", if gate_result.passed { "PASS" } else { "FAIL" }, t1_dur, &hard_rules_reason),
+            (
+                "HardRulesGate",
+                if gate_result.passed { "PASS" } else { "FAIL" },
+                t1_dur,
+                &hard_rules_reason,
+            ),
             ("Identifier", "PASS", t2_dur, &identifier_reason),
             ("Verifier", "PASS", t3_dur, &verifier_reason),
-            ("DebateLayer", if verdict.judge_veto { "FAIL" } else { "PASS" }, t4_dur, &debate_reason),
-            ("Judge", if verdict.judge_veto { "VETO" } else { "APPROVE" }, 0.0, &judge_reason),
-            ("Execution", if executed { "EXECUTED" } else { "FAILED" }, exec_dur, &exec_reason),
+            (
+                "DebateLayer",
+                if verdict.judge_veto { "FAIL" } else { "PASS" },
+                t4_dur,
+                &debate_reason,
+            ),
+            (
+                "Judge",
+                if verdict.judge_veto {
+                    "VETO"
+                } else {
+                    "APPROVE"
+                },
+                0.0,
+                &judge_reason,
+            ),
+            (
+                "Execution",
+                if executed { "EXECUTED" } else { "FAILED" },
+                exec_dur,
+                &exec_reason,
+            ),
         ];
-        self.state.push_summary_cot(
-            chain_id,
-            symbol,
-            summary_layers,
-            final_action,
-            &exec_reason,
-        ).await;
+        self.state
+            .push_summary_cot(chain_id, symbol, summary_layers, final_action, &exec_reason)
+            .await;
 
         // ── Send pipeline run event to metrics service (fire-and-forget) ──
         let layers = vec![
@@ -814,7 +850,7 @@ impl crate::orchestrator_struct::AutonomousOrchestrator {
                 {
                     // Compute execution duration from total minus layer times
                     let layer_sum = t1_dur + t2_dur + t3_dur + t4_dur;
-                    
+
                     if total_ms as f64 - layer_sum > 0.0 {
                         total_ms as f64 - layer_sum
                     } else {

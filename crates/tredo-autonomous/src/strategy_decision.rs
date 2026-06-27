@@ -184,7 +184,10 @@ impl StrategyDecisionAgent {
         self.state
             .push_cot(
                 "TriLevel::Consensus",
-                &format!("Tri-level consensus for {} (agree={}/3 hard={})", symbol, tri_verdict.agreement_count, tri_verdict.hard_agree),
+                &format!(
+                    "Tri-level consensus for {} (agree={}/3 hard={})",
+                    symbol, tri_verdict.agreement_count, tri_verdict.hard_agree
+                ),
                 &tri_verdict.consensus_action,
                 &format!(
                     "weighted_signal={:.3} agree={}/{} hard_agree={} unanimous={}",
@@ -388,7 +391,8 @@ impl StrategyDecisionAgent {
         if primary_action == "HOLD"
             && tri_verdict.consensus_action != "HOLD"
             && tri_verdict.consensus_signal.abs() > 0.35
-            && tri_verdict.hard_agree // only upgrade if 2+ layers agree
+            && tri_verdict.hard_agree
+        // only upgrade if 2+ layers agree
         {
             if tri_verdict.consensus_action == "BUY" || tri_verdict.consensus_action == "SELL" {
                 primary_action = tri_verdict.consensus_action.as_str();
@@ -418,11 +422,16 @@ impl StrategyDecisionAgent {
                 self.state
                     .push_cot(
                         "StrategyDecision",
-                        &format!("Direction lock for {} — unanimous tri-level override", symbol),
+                        &format!(
+                            "Direction lock for {} — unanimous tri-level override",
+                            symbol
+                        ),
                         "DIRECTION_LOCKED",
                         &format!(
                             "Deterministic={} overridden by unanimous tri-level={}. agree={}/3",
-                            primary_action, tri_verdict.consensus_action, tri_verdict.agreement_count
+                            primary_action,
+                            tri_verdict.consensus_action,
+                            tri_verdict.agreement_count
                         ),
                         0.0,
                         0,
@@ -512,15 +521,26 @@ impl StrategyDecisionAgent {
             // Skip SI and LLM entirely — deterministic strategy is already solid
             let signal = TradeSignal {
                 symbol: symbol.to_string(),
-                direction: if primary_action == "BUY" { tredo_core::TradeDirection::Long } else { tredo_core::TradeDirection::Short },
+                direction: if primary_action == "BUY" {
+                    tredo_core::TradeDirection::Long
+                } else {
+                    tredo_core::TradeDirection::Short
+                },
                 entry_price: primary_entry,
                 stop_loss: primary_sl,
                 take_profit: primary_tp,
                 position_size: 0.0, // computed below
                 confidence_score: primary_conf.min(0.95),
                 confluence_score: reliance,
-                risk_reward_ratio: ((primary_tp - primary_entry).abs() / (primary_entry - primary_sl).abs()).max(1.0),
-                reasoning: format!("FAST-PATH: {} (conf={:.1}%) | {}", strategy_source, primary_conf * 100.0, tech_reasoning),
+                risk_reward_ratio: ((primary_tp - primary_entry).abs()
+                    / (primary_entry - primary_sl).abs())
+                .max(1.0),
+                reasoning: format!(
+                    "FAST-PATH: {} (conf={:.1}%) | {}",
+                    strategy_source,
+                    primary_conf * 100.0,
+                    tech_reasoning
+                ),
                 timestamp: Utc::now(),
                 session_valid: session.market_open,
                 risk_check_passed: true,
@@ -528,12 +548,24 @@ impl StrategyDecisionAgent {
             // Apply psychology sizing
             let (equity, _fresh_heat, _fresh_consecutive_losses) = {
                 let p = self.state.portfolio.read().await;
-                (p.cash_balance + p.open_positions.iter().map(|pos| pos.current_price * pos.quantity).sum::<f64>(), 0.0, p.consecutive_losses)
+                (
+                    p.cash_balance
+                        + p.open_positions
+                            .iter()
+                            .map(|pos| pos.current_price * pos.quantity)
+                            .sum::<f64>(),
+                    0.0,
+                    p.consecutive_losses,
+                )
             };
             let effective_risk = (rules.max_risk_per_trade * 1.0).max(0.002);
             let kelly_stats = self.state.episode_store.kelly_trade_stats(50);
             let (position_size, _kelly_half) = crate::helpers::kelly_capped_position_size(
-                equity, effective_risk, signal.entry_price, signal.stop_loss, &kelly_stats,
+                equity,
+                effective_risk,
+                signal.entry_price,
+                signal.stop_loss,
+                &kelly_stats,
             );
             let cash_available = { self.state.portfolio.read().await.cash_balance };
             let max_from_equity = equity * 0.04;
@@ -706,38 +738,40 @@ impl StrategyDecisionAgent {
 
             // LLM decision (opinion only) — Fix #6: Hard 5-second timeout
             let llm_decision: Option<LlmTradeDecision> = {
-                self.state.push_live_comm(
-                    "Verifier",
-                    "Ollama",
-                    "QUERY",
-                    &format!("Requesting LLM opinion for {} @ {:.2} (Model: {})", symbol, current_price, self.state.config.llm_model),
-                    Some(symbol.to_string()),
-                ).await;
+                self.state
+                    .push_live_comm(
+                        "Verifier",
+                        "Ollama",
+                        "QUERY",
+                        &format!(
+                            "Requesting LLM opinion for {} @ {:.2} (Model: {})",
+                            symbol, current_price, self.state.config.llm_model
+                        ),
+                        Some(symbol.to_string()),
+                    )
+                    .await;
 
-                let llm_future = self
-                    .state
-                    .llm
-                    .ask_for_trade_decision(
-                        symbol,
-                        current_price,
-                        reliance,
-                        trend_label,
-                        pivots.pivot,
-                        pivots.r1,
-                        pivots.s1,
-                        &forecast_summary,
-                        portfolio_heat,
-                        session.market_open,
-                        consecutive_losses,
-                        &calendar_context,
-                        &trading_mode,
-                        &daily_goal_context,
-                        &multi_tf_context,
-                        &agent_market_summary,
-                        &news_context,
-                        &vector_context,
-                        &patterns_context,
-                    );
+                let llm_future = self.state.llm.ask_for_trade_decision(
+                    symbol,
+                    current_price,
+                    reliance,
+                    trend_label,
+                    pivots.pivot,
+                    pivots.r1,
+                    pivots.s1,
+                    &forecast_summary,
+                    portfolio_heat,
+                    session.market_open,
+                    consecutive_losses,
+                    &calendar_context,
+                    &trading_mode,
+                    &daily_goal_context,
+                    &multi_tf_context,
+                    &agent_market_summary,
+                    &news_context,
+                    &vector_context,
+                    &patterns_context,
+                );
 
                 // ═══ HARD 25-SECOND LLM TIMEOUT ════════════════════
                 // Prevent LLM from blocking the pipeline if it's slow or hung.
@@ -758,29 +792,35 @@ impl StrategyDecisionAgent {
                     }
                 });
 
-                let available = decision.action != "HOLD" && !decision.reason.contains("Parse failed") && !decision.reason.contains("unavailable");
+                let available = decision.action != "HOLD"
+                    && !decision.reason.contains("Parse failed")
+                    && !decision.reason.contains("unavailable");
 
                 if available {
-                    self.state.push_live_comm(
-                        "Ollama",
-                        "Verifier",
-                        &decision.action,
-                        &format!("Opinion: {}", decision.reason),
-                        Some(symbol.to_string()),
-                    ).await;
+                    self.state
+                        .push_live_comm(
+                            "Ollama",
+                            "Verifier",
+                            &decision.action,
+                            &format!("Opinion: {}", decision.reason),
+                            Some(symbol.to_string()),
+                        )
+                        .await;
                     println!(
                         "[Strategy] 🤖 LLM opinion for {}: {} (SI says {}) — cross-check only",
                         symbol, decision.action, si_final_action
                     );
                     Some(decision)
                 } else {
-                    self.state.push_live_comm(
-                        "Ollama",
-                        "Verifier",
-                        "HOLD",
-                        &format!("Opinion: LLM unavailable/HOLD: {}", decision.reason),
-                        Some(symbol.to_string()),
-                    ).await;
+                    self.state
+                        .push_live_comm(
+                            "Ollama",
+                            "Verifier",
+                            "HOLD",
+                            &format!("Opinion: LLM unavailable/HOLD: {}", decision.reason),
+                            Some(symbol.to_string()),
+                        )
+                        .await;
                     println!("[Strategy] ⚠ LLM unavailable or HOLD — deterministic path used without LLM");
                     None
                 }
@@ -1054,7 +1094,9 @@ impl StrategyDecisionAgent {
         // ── Geometry Consistency Gate (3-level cross-check) ──────────────────
         // Block execution if the signal direction contradicts a hard-agreed tri-level consensus.
         // This is the final safety net: even after direction lock above, verify the signal.
-        if let Err(conflict) = crate::tri_level_validator::is_geometry_consistent(&tri_verdict, &signal) {
+        if let Err(conflict) =
+            crate::tri_level_validator::is_geometry_consistent(&tri_verdict, &signal)
+        {
             println!(
                 "[StrategyDecisionAgent] ❌ GEOMETRY_CONFLICT for {} — aborting: {}",
                 symbol, conflict

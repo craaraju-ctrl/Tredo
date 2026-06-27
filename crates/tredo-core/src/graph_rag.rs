@@ -185,10 +185,7 @@ impl KnowledgeGraph {
     /// For simplicity, we connect entity nodes directly (Symbol ↔ Regime ↔ Direction etc.)
     /// rather than creating intermediate episode nodes, since the graph is used for
     /// aggregate relationship queries, not individual episode lookup.
-    pub fn build_from_episodes(
-        &mut self,
-        episodes: &[ClosedEpisodeLite],
-    ) {
+    pub fn build_from_episodes(&mut self, episodes: &[ClosedEpisodeLite]) {
         for ep in episodes {
             let pnl_pct = ep.pnl_pct;
             let was_win = ep.was_correct;
@@ -229,21 +226,13 @@ impl KnowledgeGraph {
     ///
     /// Traverses 2 hops from the symbol node, collecting all reachable
     /// relationships with aggregate statistics.
-    pub fn query_symbol_regime(
-        &self,
-        symbol: &str,
-        regime: &str,
-    ) -> GraphRecallResult {
+    pub fn query_symbol_regime(&self, symbol: &str, regime: &str) -> GraphRecallResult {
         let sym_node = GraphNode::Symbol(symbol.to_string());
         self.query_relationship(&sym_node, Some(&GraphNode::Regime(regime.to_string())), 2)
     }
 
     /// Query: "What's the win rate for {direction} trades in {regime} markets?"
-    pub fn query_direction_regime(
-        &self,
-        direction: &str,
-        regime: &str,
-    ) -> GraphRecallResult {
+    pub fn query_direction_regime(&self, direction: &str, regime: &str) -> GraphRecallResult {
         let dir_node = GraphNode::Direction(direction.to_string());
         self.query_relationship(&dir_node, Some(&GraphNode::Regime(regime.to_string())), 2)
     }
@@ -311,7 +300,10 @@ impl KnowledgeGraph {
             }
 
             // Walk incoming edges too (bidirectional traversal)
-            for edge in self.graph.edges_directed(current, petgraph::Direction::Incoming) {
+            for edge in self
+                .graph
+                .edges_directed(current, petgraph::Direction::Incoming)
+            {
                 let source_idx = edge.source();
                 let weight = edge.weight();
 
@@ -323,7 +315,11 @@ impl KnowledgeGraph {
                     None => true,
                 };
 
-                if matches_target && !relationships.iter().any(|r| r.from == from_node && r.to == to_node) {
+                if matches_target
+                    && !relationships
+                        .iter()
+                        .any(|r| r.from == from_node && r.to == to_node)
+                {
                     relationships.push(GraphRelationship {
                         from: from_node,
                         to: to_node,
@@ -359,7 +355,13 @@ impl KnowledgeGraph {
         };
 
         // Build human-readable summary
-        let summary = self.format_summary(start, &relationships, total_episodes, aggregate_win_rate, aggregate_avg_pnl);
+        let summary = self.format_summary(
+            start,
+            &relationships,
+            total_episodes,
+            aggregate_win_rate,
+            aggregate_avg_pnl,
+        );
 
         GraphRecallResult {
             relationships,
@@ -380,10 +382,7 @@ impl KnowledgeGraph {
         avg_pnl: f64,
     ) -> String {
         if total == 0 {
-            return format!(
-                "GraphRAG: No historical data for {}.",
-                start
-            );
+            return format!("GraphRAG: No historical data for {}.", start);
         }
 
         let mut lines = vec![format!(
@@ -546,6 +545,7 @@ fn confluence_label(score: f64) -> String {
 mod tests {
     use super::*;
 
+    #[allow(clippy::too_many_arguments)]
     fn make_episode(
         symbol: &str,
         direction: &str,
@@ -600,7 +600,7 @@ mod tests {
 
         let result = kg.query_symbol_regime("BTC", "TrendingBull");
         assert!(result.total_episodes > 0);
-        assert!(result.relationships.len() > 0);
+        assert!(!result.relationships.is_empty());
         assert!(!result.summary.is_empty());
         // BTC in TrendingBull should have good stats
         assert!(result.aggregate_win_rate > 0.5);
@@ -674,9 +674,16 @@ mod tests {
 
     #[test]
     fn test_graph_persistence_file() {
-        let episodes = vec![
-            make_episode("BTC", "Long", "WIN", "TrendingBull", 2.5, true, 0.1, 0.75),
-        ];
+        let episodes = vec![make_episode(
+            "BTC",
+            "Long",
+            "WIN",
+            "TrendingBull",
+            2.5,
+            true,
+            0.1,
+            0.75,
+        )];
 
         let mut kg = KnowledgeGraph::new();
         kg.build_from_episodes(&episodes);

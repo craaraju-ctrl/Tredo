@@ -3,6 +3,8 @@ target/
 *.db-shm
 *.db-wal
 *.log
+*.jsonl
+*.redb
 .env
 .DS_Store
 tredo

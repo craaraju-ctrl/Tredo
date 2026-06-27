@@ -151,6 +151,7 @@ impl TriLevelValidator {
     ///
     /// Returns a `TriLevelVerdict` with `hard_agree` set to true only when
     /// ≥ 2 of 3 layers agree on the consensus direction.
+    #[allow(clippy::too_many_arguments)]
     pub async fn run_parallel_check(
         &self,
         symbol: &str,
@@ -181,6 +182,7 @@ impl TriLevelValidator {
     /// (HardRulesGate, LLM, Kronos) see the identical market data.
     ///
     /// This is the unified entry point from the redesigned pipeline.
+    #[allow(clippy::too_many_arguments)]
     pub async fn run_parallel_check_with_ohlcv(
         &self,
         snapshot: &OhlcvSnapshot,
@@ -246,10 +248,7 @@ impl TriLevelValidator {
                 );
                 drop(vm);
                 let vm2 = self.state.vector_memory.read().await;
-                match vm2
-                    .search(&query, 3, &self.state.llm)
-                    .await
-                {
+                match vm2.search(&query, 3, &self.state.llm).await {
                     Ok(results) if !results.is_empty() => results
                         .iter()
                         .map(|r| {
@@ -257,7 +256,12 @@ impl TriLevelValidator {
                                 .regret_score
                                 .map(|s| format!(" regret={:.2}", s))
                                 .unwrap_or_default();
-                            format!("{} (sim={:.0}%){}", r.summary_text, r.similarity * 100.0, regret)
+                            format!(
+                                "{} (sim={:.0}%){}",
+                                r.summary_text,
+                                r.similarity * 100.0,
+                                regret
+                            )
                         })
                         .collect::<Vec<_>>()
                         .join(" | "),
@@ -494,18 +498,27 @@ impl TriLevelValidator {
         // Use snapshot bars for pivot (same data as rules and Kronos layers)
         let (real_high, real_low, real_close) = match snapshot.bars().last() {
             Some(bar) => (bar.high, bar.low, bar.close),
-            None => (current_price * 1.01, current_price * 0.99, current_price * 0.998),
+            None => (
+                current_price * 1.01,
+                current_price * 0.99,
+                current_price * 0.998,
+            ),
         };
         let pivots = calculate_pivot_points(real_high, real_low, real_close, rules.pivot_method);
         drop(rules);
 
-        state.push_live_comm(
-            "TriLevel::LLM",
-            "Ollama",
-            "QUERY",
-            &format!("Requesting trade decision for {} @ {:.2} (Model: {})", symbol, current_price, state.config.llm_model),
-            Some(symbol.to_string()),
-        ).await;
+        state
+            .push_live_comm(
+                "TriLevel::LLM",
+                "Ollama",
+                "QUERY",
+                &format!(
+                    "Requesting trade decision for {} @ {:.2} (Model: {})",
+                    symbol, current_price, state.config.llm_model
+                ),
+                Some(symbol.to_string()),
+            )
+            .await;
 
         // ═══ HARD 25-SECOND LLM TIMEOUT ════════════════════════════
         // Prevent LLM from blocking the tri-level validator if slow.
@@ -536,7 +549,10 @@ impl TriLevelValidator {
         )
         .await
         .unwrap_or_else(|_| {
-            println!("[TriLevel] ⏱ LLM timed out after 25s for {} — marking unavailable", symbol);
+            println!(
+                "[TriLevel] ⏱ LLM timed out after 25s for {} — marking unavailable",
+                symbol
+            );
             LlmTradeDecision {
                 action: "HOLD".to_string(),
                 reason: "LLM timeout (25s)".to_string(),
@@ -550,21 +566,25 @@ impl TriLevelValidator {
             !decision.reason.contains("Parse failed") && !decision.reason.contains("unavailable");
 
         if available {
-            state.push_live_comm(
-                "Ollama",
-                "TriLevel::LLM",
-                &decision.action,
-                &format!("Response: {}", decision.reason),
-                Some(symbol.to_string()),
-            ).await;
+            state
+                .push_live_comm(
+                    "Ollama",
+                    "TriLevel::LLM",
+                    &decision.action,
+                    &format!("Response: {}", decision.reason),
+                    Some(symbol.to_string()),
+                )
+                .await;
         } else {
-            state.push_live_comm(
-                "Ollama",
-                "TriLevel::LLM",
-                "ERROR",
-                &format!("Ollama request failed/HOLD: {}", decision.reason),
-                Some(symbol.to_string()),
-            ).await;
+            state
+                .push_live_comm(
+                    "Ollama",
+                    "TriLevel::LLM",
+                    "ERROR",
+                    &format!("Ollama request failed/HOLD: {}", decision.reason),
+                    Some(symbol.to_string()),
+                )
+                .await;
         }
 
         let confidence: f64 = if !available {
@@ -600,8 +620,16 @@ impl TriLevelValidator {
                 pivots.pivot,
                 pivots.r1,
                 pivots.s1,
-                if multi_tf_context.contains("TFs") { "available" } else { "none" },
-                if available { "LLM_OK" } else { "LLM_UNAVAILABLE" }
+                if multi_tf_context.contains("TFs") {
+                    "available"
+                } else {
+                    "none"
+                },
+                if available {
+                    "LLM_OK"
+                } else {
+                    "LLM_UNAVAILABLE"
+                }
             ),
             available,
         }
@@ -638,13 +666,15 @@ impl TriLevelValidator {
             sample_count: 1,
         };
 
-        state.push_live_comm(
-            "TriLevel::Kronos",
-            "Kronos",
-            "FORECAST",
-            &format!("Requesting 5-bar forecast trajectory for {}", symbol),
-            Some(symbol.to_string()),
-        ).await;
+        state
+            .push_live_comm(
+                "TriLevel::Kronos",
+                "Kronos",
+                "FORECAST",
+                &format!("Requesting 5-bar forecast trajectory for {}", symbol),
+                Some(symbol.to_string()),
+            )
+            .await;
 
         match client.forecast(req).await {
             Ok(resp) => {
@@ -656,13 +686,15 @@ impl TriLevelValidator {
                     .collect();
 
                 if closes.is_empty() {
-                    state.push_live_comm(
-                        "Kronos",
-                        "TriLevel::Kronos",
-                        "HOLD",
-                        "Forecast returned empty trajectory",
-                        Some(symbol.to_string()),
-                    ).await;
+                    state
+                        .push_live_comm(
+                            "Kronos",
+                            "TriLevel::Kronos",
+                            "HOLD",
+                            "Forecast returned empty trajectory",
+                            Some(symbol.to_string()),
+                        )
+                        .await;
                     return LayerSignal {
                         layer: "kronos".into(),
                         signal: 0.0,
@@ -718,13 +750,22 @@ impl TriLevelValidator {
                     signal_to_action(signal)
                 };
 
-                state.push_live_comm(
-                    "Kronos",
-                    "TriLevel::Kronos",
-                    &action,
-                    &format!("Response: trajectory={}/{} consistent ({:.0}%) | pred={:.2} ({:+.2}%)", consistent_bars, total_bars, consistency_ratio * 100.0, last_pred, overall_pct * 100.0),
-                    Some(symbol.to_string()),
-                ).await;
+                state
+                    .push_live_comm(
+                        "Kronos",
+                        "TriLevel::Kronos",
+                        &action,
+                        &format!(
+                            "Response: trajectory={}/{} consistent ({:.0}%) | pred={:.2} ({:+.2}%)",
+                            consistent_bars,
+                            total_bars,
+                            consistency_ratio * 100.0,
+                            last_pred,
+                            overall_pct * 100.0
+                        ),
+                        Some(symbol.to_string()),
+                    )
+                    .await;
 
                 LayerSignal {
                     layer: "kronos".into(),
@@ -745,13 +786,15 @@ impl TriLevelValidator {
                 }
             }
             Err(e) => {
-                state.push_live_comm(
-                    "Kronos",
-                    "TriLevel::Kronos",
-                    "ERROR",
-                    &format!("Forecast failed: {}", e),
-                    Some(symbol.to_string()),
-                ).await;
+                state
+                    .push_live_comm(
+                        "Kronos",
+                        "TriLevel::Kronos",
+                        "ERROR",
+                        &format!("Forecast failed: {}", e),
+                        Some(symbol.to_string()),
+                    )
+                    .await;
                 LayerSignal {
                     layer: "kronos".into(),
                     signal: 0.0,
@@ -892,10 +935,7 @@ pub fn is_geometry_consistent(
     if signal_action != verdict.consensus_action {
         Err(format!(
             "DIRECTION_CONFLICT: signal={} but tri-level consensus={} (hard_agree={}, agree={}/3)",
-            signal_action,
-            verdict.consensus_action,
-            verdict.hard_agree,
-            verdict.agreement_count
+            signal_action, verdict.consensus_action, verdict.hard_agree, verdict.agreement_count
         ))
     } else {
         Ok(())

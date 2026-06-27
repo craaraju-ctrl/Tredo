@@ -348,8 +348,10 @@ impl SharedState {
         parent_id: Option<u64>,
         symbol: Option<String>,
     ) -> u64 {
-        self.push_cot_with_persist(agent, input, action, reason, confidence, chain_id, parent_id, symbol, true)
-            .await
+        self.push_cot_with_persist(
+            agent, input, action, reason, confidence, chain_id, parent_id, symbol, true,
+        )
+        .await
     }
 
     /// Push a COT entry with an explicit persist flag.
@@ -439,8 +441,10 @@ impl SharedState {
         match self.episode_store.prune_cot_entries(&cutoff) {
             Ok(deleted) => {
                 if deleted > 0 {
-                    println!("[COT] 🧹 Pruned {} COT entries older than {} days from SQLite",
-                        deleted, COT_PRUNE_DAYS);
+                    println!(
+                        "[COT] 🧹 Pruned {} COT entries older than {} days from SQLite",
+                        deleted, COT_PRUNE_DAYS
+                    );
                 }
             }
             Err(e) => eprintln!("[COT] ⚠ Failed to prune old COT entries: {}", e),
@@ -814,8 +818,10 @@ impl SharedState {
         confidence: f64,
         symbol: Option<String>,
     ) -> u64 {
-        self.add_cot_step_quiet(chain_id, agent, input, action, reason, confidence, symbol, false)
-            .await
+        self.add_cot_step_quiet(
+            chain_id, agent, input, action, reason, confidence, symbol, false,
+        )
+        .await
     }
 
     /// Broadcast a transient live agent communication event directly to the WebSocket channel.

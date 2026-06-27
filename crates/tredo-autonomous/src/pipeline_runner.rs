@@ -255,7 +255,10 @@ pub async fn run_single_quiet(
     {
         let mut in_flight = IN_FLIGHT.lock().unwrap();
         if !in_flight.insert(sym.clone()) {
-            println!("[PipelineRunner] ⏭ {} already in-flight — skipping (dedup)", sym);
+            println!(
+                "[PipelineRunner] ⏭ {} already in-flight — skipping (dedup)",
+                sym
+            );
             return PipelineRunOutcome {
                 report: PipelineRunReport {
                     symbol: sym,
@@ -390,11 +393,7 @@ pub struct WhitelistConfig {
 impl Default for WhitelistConfig {
     fn default() -> Self {
         Self {
-            symbols: vec![
-                "BTC".to_string(),
-                "ETH".to_string(),
-                "SOL".to_string(),
-            ],
+            symbols: vec!["BTC".to_string(), "ETH".to_string(), "SOL".to_string()],
             cooldown_secs: 1800,
             inter_symbol_delay_ms: 500,
             skip_in_cooldown: true,

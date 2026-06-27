@@ -98,6 +98,7 @@ impl ExecutionCoordinatorAgent {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn push_execution_cot(
         &self,
         cot_chain_id: Option<u64>,
@@ -1196,8 +1197,12 @@ impl ExecutionCoordinatorAgent {
                         .await;
                         let episode_id =
                             format!("ep-{}-{}", pos.symbol, pos.entry_time.timestamp());
-                        self.spawn_outcome_processing(episode_id, current_price, pos.symbol.clone())
-                            .await;
+                        self.spawn_outcome_processing(
+                            episode_id,
+                            current_price,
+                            pos.symbol.clone(),
+                        )
+                        .await;
                         let closed = tredo_core::ClosedTrade {
                             id: format!("{}-{}", pos.symbol, Utc::now().timestamp()),
                             symbol: pos.symbol.clone(),

@@ -135,6 +135,7 @@ impl LiveOrderManager {
     }
 
     /// Register a newly-placed order in the tracker.
+    #[allow(clippy::too_many_arguments)]
     pub async fn register_order(
         &self,
         broker_order_id: &str,

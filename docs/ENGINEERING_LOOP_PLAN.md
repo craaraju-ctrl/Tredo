@@ -28,43 +28,60 @@ so it never fires in observation/validation runs.
 
 ---
 
-## 1. Extended self-evolution validation (observable compounding) — PARTIAL
+## 1. Extended self-evolution validation (observable compounding) — MOSTLY DONE
 **Goal:** a repeatable harness that runs N cycles, optionally induces regret, and
 reports whether avg regret trends down and rules adapt.
 
-- `crates/tredo-autonomous/src/self_evolution.rs` already has
-  `SelfEvolutionValidator::run_extended_validation` and `SelfEvolutionReport`.
-  Confirm it's reachable from a CLI subcommand.
-- Add a launcher subcommand `validate --long --cycles N --induce-regret` in
-  `crates/tredo-autonomous/src/bin/tredo_cli.rs` (and/or the `tredo` script) that
-  drives it against the paper engine.
-- Persist `(episode_id, regret, rules_snapshot)` per cycle (reuse
-  `episode_store.rs` rule-change tables) and emit a COT line
-  `EVOLUTION_METRIC: regret_trend=...`.
-- **Test:** `cargo test -p tredo-autonomous` — add an integration test that runs
-  ~20 synthetic episodes and asserts the report aggregates regret buckets.
+DONE this pass:
+- `self_evolution.rs` already had `run_extended_validation` + `SelfEvolutionReport`.
+- Added CLI subcommand `tredo-cli self-evolve [cycles] [--induce] [--symbols ...]`
+  wiring it to the real orchestrator.
+- Made `compute_buckets` a pure fn and added 4 deterministic unit tests for the
+  bucket / regret-trend / win-rate math (run in CI via `cargo test`).
 
-## 2. Realistic paper execution (local order book + slippage) — GAP
-**Goal:** replace fixed-% slippage with depth-walked fills.
+REMAINING (the one real gap): `--induce` currently only *logs*
+`INDUCED_REGRET_SL_PCT` — it does not yet tighten actual stops, so it can't force
+high-regret sequences. To finish: gate a tight-SL override in the execution/risk
+path on an env flag (e.g. `TREDO_INDUCE_REGRET_SL_PCT`) that the validator sets,
+so induced runs produce real losses → real rule adaptations. Needs the
+build-verify loop (touches risk sizing). Optional: emit an
+`EVOLUTION_METRIC: regret_trend=...` COT line per cycle.
 
-- `crates/tredo-core/src/paper_engine.rs`: add `LocalOrderBook { bids: BTreeMap,
-  asks: BTreeMap }` + `apply_depth(&mut self, DepthUpdate)`; on `place_order`
-  walk levels for fill price + partial fills.
-- Feed depth from the fast loop (see item 5).
-- Keep current behavior behind a flag (`TREDO_REALISTIC_PAPER`) so it's opt-in
-  until validated.
-- **Test:** unit test that a market order against a known book ladder produces
-  the expected VWAP fill and remaining qty.
+## 2. Realistic paper execution (local order book + slippage) — DONE ✅ (needs a feed)
+**Re-audit (2026-06-27):** already implemented in `crates/tredo-core/src/paper_engine.rs`:
+- `LocalOrderBook` (sorted bids/asks) with `apply_depth_update(bids, asks, update_id)`,
+  `market_buy`/`market_sell` walking the book → `FillResult` (avg fill price,
+  filled qty, slippage %, levels consumed, partial-fill flag).
+- `PaperEngine` holds `order_books: RwLock<HashMap<String, LocalOrderBook>>` plus
+  `apply_depth_snapshot`, `apply_depth_update`, `get_order_book`,
+  `estimate_realistic_slippage`.
+- `place_order` **already walks the book** for `OrderType::Market` when
+  `config.realistic_paper_enabled == true` and the book has data; otherwise it
+  falls back to fixed-% slippage.
+- Unit-test surface exists.
 
-## 3. Real-time Binance WS depth feed — GAP
-- New module `crates/tredo-orchestrator/src/feeds/binance_ws.rs` (or in
-  `tredo-market-data`) using `tokio-tungstenite`: subscribe `@depth@100ms`,
-  bootstrap with REST snapshot, drop stale events by `updateId` (per Binance
-  "manage local order book").
-- Push updates into `SharedState` (new `order_books: RwLock<HashMap<String,
-  LocalOrderBook>>`) and into the paper engine.
-- Derive an `OrderBookImbalance` skill for the pipeline.
-- **Deps:** add `tokio-tungstenite`, feature-gate `binance-ws`.
+**Remaining for item 2:** nothing structural — it just needs (a) a live depth
+source populating `order_books` (item 3) and (b) `realistic_paper_enabled = true`.
+Until a feed exists, `place_order` correctly falls back to fixed slippage.
+
+## 3. Feed depth into the order book — GAP (this unlocks item 2 at runtime)
+The plumbing exists (`apply_depth_snapshot` / `apply_depth_update`); nothing calls
+it yet. Two options, smallest first:
+
+**3a. REST snapshot (low risk, reuse existing code).** `main.rs` already fetches
+`https://api.binance.com/api/v3/depth` for the `/depth` handler. In the fast loop,
+for each crypto symbol, fetch the depth snapshot every N ticks and call
+`paper_engine.apply_depth_snapshot(symbol, bids, asks)`. No new deps. Gate behind
+`realistic_paper_enabled`. This makes realistic fills work today.
+
+**3b. WS stream (lower latency, more code).** New module using `tokio-tungstenite`
+(already in the tree): subscribe `@depth@100ms`, bootstrap with REST snapshot,
+drop stale events by `updateId` per Binance "manage local order book". Push diffs
+via `apply_depth_update`. Optionally derive an `OrderBookImbalance` skill.
+
+**Recommendation:** do 3a first (small, reuses proven REST code, immediately
+enables item 2), then 3b if latency matters. Both must go through the build-verify
+loop — they touch the hot path and P&L.
 
 ## 4. Full LanceDB vector memory — PARTIAL (JSON fallback today)
 - `crates/tredo-core/src/vector_memory.rs` currently brute-forces cosine over a

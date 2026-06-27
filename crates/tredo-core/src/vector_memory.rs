@@ -2,8 +2,8 @@ use crate::LlmExecutor;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::env;
 use std::collections::HashMap;
+use std::env;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VectorEntry {
@@ -34,7 +34,8 @@ pub struct VectorMemory {
 
 impl VectorMemory {
     pub fn new(_db_path: &str) -> Self {
-        let base_url = env::var("MEMORY_API_URL").unwrap_or_else(|_| "http://localhost:3111".to_string());
+        let base_url =
+            env::var("MEMORY_API_URL").unwrap_or_else(|_| "http://localhost:3111".to_string());
         let client = reqwest::Client::new();
         // Check health synchronously with a short timeout using ureq.
         let is_online = ureq::get(&format!("{}/health", base_url))
@@ -79,10 +80,7 @@ impl VectorMemory {
             "importance": 0.7
         });
 
-        let resp = self.client.post(&url)
-            .json(&body)
-            .send()
-            .await?;
+        let resp = self.client.post(&url).json(&body).send().await?;
 
         if resp.status().is_success() {
             Ok(())
@@ -102,7 +100,8 @@ impl VectorMemory {
         }
         let query_embedding_f32 = llm.embed_text(query_text).await?;
         let query_embedding_f64: Vec<f64> = query_embedding_f32.iter().map(|&x| x as f64).collect();
-        self.search_by_vector_async(query_embedding_f64.as_slice(), top_k).await
+        self.search_by_vector_async(query_embedding_f64.as_slice(), top_k)
+            .await
     }
 
     async fn search_by_vector_async(
@@ -119,10 +118,7 @@ impl VectorMemory {
             "k": top_k
         });
 
-        let resp = self.client.post(&url)
-            .json(&body)
-            .send()
-            .await?;
+        let resp = self.client.post(&url).json(&body).send().await?;
 
         if !resp.status().is_success() {
             return Err(format!("Memory service returned status {}", resp.status()).into());
@@ -148,9 +144,12 @@ impl VectorMemory {
             let ts = DateTime::parse_from_rfc3339(&r.record.timestamp)
                 .map(|dt| dt.with_timezone(&Utc))
                 .unwrap_or_else(|_| Utc::now());
-            
+
             let symbol = r.record.metadata.get("symbol").cloned().unwrap_or_default();
-            let regret_score = r.record.metadata.get("regret_score")
+            let regret_score = r
+                .record
+                .metadata
+                .get("regret_score")
                 .and_then(|s| s.parse::<f64>().ok());
 
             mapped.push(SimilarResult {
@@ -209,9 +208,12 @@ impl VectorMemory {
             let ts = DateTime::parse_from_rfc3339(&r.record.timestamp)
                 .map(|dt| dt.with_timezone(&Utc))
                 .unwrap_or_else(|_| Utc::now());
-            
+
             let symbol = r.record.metadata.get("symbol").cloned().unwrap_or_default();
-            let regret_score = r.record.metadata.get("regret_score")
+            let regret_score = r
+                .record
+                .metadata
+                .get("regret_score")
                 .and_then(|s| s.parse::<f64>().ok());
 
             mapped.push(SimilarResult {

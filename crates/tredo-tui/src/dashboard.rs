@@ -175,16 +175,16 @@ pub fn render_dashboard(f: &mut Frame, area: Rect, app: &mut AppState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2), // Title (line 1) + service status strip (line 2)
-            Constraint::Length(1), // gap
+            Constraint::Length(2),         // Title (line 1) + service status strip (line 2)
+            Constraint::Length(1),         // gap
             Constraint::Length(top_row_h), // Top row
             Constraint::Length(if top_row_h > 0 { 1 } else { 0 }), // gap
             Constraint::Length(bot_row_h), // Bottom row
             Constraint::Length(if bot_row_h > 0 { 1 } else { 0 }), // gap
-            Constraint::Length(3), // Stats bar
-            Constraint::Length(spark_h), // Four sparkline cards
+            Constraint::Length(3),         // Stats bar
+            Constraint::Length(spark_h),   // Four sparkline cards
             Constraint::Length(if spark_h > 0 { 1 } else { 0 }), // gap
-            Constraint::Min(min_bottom),    // 5-Layer Pipeline Flow + Agent Comms + Judge
+            Constraint::Min(min_bottom),   // 5-Layer Pipeline Flow + Agent Comms + Judge
         ])
         .split(area);
 
@@ -807,11 +807,7 @@ fn safe_truncate(s: &str, max_chars: usize) -> String {
     }
     // Find the byte position of the (max_chars - 3)th character boundary
     let cut = max_chars.saturating_sub(3);
-    let byte_pos = s
-        .char_indices()
-        .nth(cut)
-        .map(|(i, _)| i)
-        .unwrap_or(s.len());
+    let byte_pos = s.char_indices().nth(cut).map(|(i, _)| i).unwrap_or(s.len());
     format!("{}...", &s[..byte_pos])
 }
 
@@ -1303,15 +1299,42 @@ fn render_indicators_panel(f: &mut Frame, area: Rect, app: &AppState) {
 
     if let Some(metrics_map) = app.latest_metrics.get(symbol) {
         // Extract indicators
-        let rsi = metrics_map.get("rsi_14").and_then(|v| v.as_f64()).unwrap_or(50.0);
-        let macd_hist = metrics_map.get("macd_hist").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let atr_pct = metrics_map.get("atr_pct").and_then(|v| v.as_f64()).unwrap_or(0.01);
-        let regime = metrics_map.get("regime_hint").and_then(|v| v.as_str()).unwrap_or("ranging");
-        let confluence = metrics_map.get("confluence_hint").and_then(|v| v.as_f64()).unwrap_or(0.5);
-        let adx = metrics_map.get("adx").and_then(|v| v.as_f64()).unwrap_or(25.0);
-        let obv_dir = metrics_map.get("obv_direction").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let mfi = metrics_map.get("mfi").and_then(|v| v.as_f64()).unwrap_or(50.0);
-        let cmf = metrics_map.get("cmf").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let rsi = metrics_map
+            .get("rsi_14")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(50.0);
+        let macd_hist = metrics_map
+            .get("macd_hist")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let atr_pct = metrics_map
+            .get("atr_pct")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.01);
+        let regime = metrics_map
+            .get("regime_hint")
+            .and_then(|v| v.as_str())
+            .unwrap_or("ranging");
+        let confluence = metrics_map
+            .get("confluence_hint")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.5);
+        let adx = metrics_map
+            .get("adx")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(25.0);
+        let obv_dir = metrics_map
+            .get("obv_direction")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let mfi = metrics_map
+            .get("mfi")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(50.0);
+        let cmf = metrics_map
+            .get("cmf")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
 
         let regime_display = match regime {
             "trending_bull" => "Bull (🟢)",
@@ -1330,39 +1353,104 @@ fn render_indicators_panel(f: &mut Frame, area: Rect, app: &AppState) {
 
         lines.push(Line::from(vec![
             Span::styled("Regime: ", Style::default().fg(THEME.muted)),
-            Span::styled(regime_display, Style::default().fg(THEME.highlight).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                regime_display,
+                Style::default()
+                    .fg(THEME.highlight)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]));
         lines.push(Line::from(vec![
             Span::styled("Edge:   ", Style::default().fg(THEME.muted)),
-            Span::styled(format!("{:.0}%", confluence * 100.0), Style::default().fg(confluence_color).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("{:.0}%", confluence * 100.0),
+                Style::default()
+                    .fg(confluence_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]));
         lines.push(Line::from(vec![
             Span::styled("RSI:    ", Style::default().fg(THEME.muted)),
-            Span::styled(format!("{:.1}", rsi), Style::default().fg(if !(30.0..=70.0).contains(&rsi) { THEME.warning } else { THEME.highlight })),
+            Span::styled(
+                format!("{:.1}", rsi),
+                Style::default().fg(if !(30.0..=70.0).contains(&rsi) {
+                    THEME.warning
+                } else {
+                    THEME.highlight
+                }),
+            ),
         ]));
         lines.push(Line::from(vec![
             Span::styled("MACD:   ", Style::default().fg(THEME.muted)),
-            Span::styled(format!("{:+.4}", macd_hist), Style::default().fg(if macd_hist > 0.0 { THEME.positive } else { THEME.negative })),
+            Span::styled(
+                format!("{:+.4}", macd_hist),
+                Style::default().fg(if macd_hist > 0.0 {
+                    THEME.positive
+                } else {
+                    THEME.negative
+                }),
+            ),
         ]));
         lines.push(Line::from(vec![
             Span::styled("ATR %:  ", Style::default().fg(THEME.muted)),
-            Span::styled(format!("{:.2}%", atr_pct * 100.0), Style::default().fg(THEME.highlight)),
+            Span::styled(
+                format!("{:.2}%", atr_pct * 100.0),
+                Style::default().fg(THEME.highlight),
+            ),
         ]));
         lines.push(Line::from(vec![
             Span::styled("ADX:    ", Style::default().fg(THEME.muted)),
-            Span::styled(format!("{:.1}", adx), Style::default().fg(if adx > 25.0 { THEME.positive } else { THEME.muted })),
+            Span::styled(
+                format!("{:.1}", adx),
+                Style::default().fg(if adx > 25.0 {
+                    THEME.positive
+                } else {
+                    THEME.muted
+                }),
+            ),
         ]));
         lines.push(Line::from(vec![
             Span::styled("OBV:    ", Style::default().fg(THEME.muted)),
-            Span::styled(if obv_dir > 0.0 { "Bullish" } else if obv_dir < 0.0 { "Bearish" } else { "Neutral" }, Style::default().fg(if obv_dir > 0.0 { THEME.positive } else if obv_dir < 0.0 { THEME.negative } else { THEME.muted })),
+            Span::styled(
+                if obv_dir > 0.0 {
+                    "Bullish"
+                } else if obv_dir < 0.0 {
+                    "Bearish"
+                } else {
+                    "Neutral"
+                },
+                Style::default().fg(if obv_dir > 0.0 {
+                    THEME.positive
+                } else if obv_dir < 0.0 {
+                    THEME.negative
+                } else {
+                    THEME.muted
+                }),
+            ),
         ]));
         lines.push(Line::from(vec![
             Span::styled("MFI:    ", Style::default().fg(THEME.muted)),
-            Span::styled(format!("{:.1}", mfi), Style::default().fg(if !(20.0..=80.0).contains(&mfi) { THEME.warning } else { THEME.highlight })),
+            Span::styled(
+                format!("{:.1}", mfi),
+                Style::default().fg(if !(20.0..=80.0).contains(&mfi) {
+                    THEME.warning
+                } else {
+                    THEME.highlight
+                }),
+            ),
         ]));
         lines.push(Line::from(vec![
             Span::styled("CMF:    ", Style::default().fg(THEME.muted)),
-            Span::styled(format!("{:+.2}", cmf), Style::default().fg(if cmf > 0.15 { THEME.positive } else if cmf < -0.15 { THEME.negative } else { THEME.muted })),
+            Span::styled(
+                format!("{:+.2}", cmf),
+                Style::default().fg(if cmf > 0.15 {
+                    THEME.positive
+                } else if cmf < -0.15 {
+                    THEME.negative
+                } else {
+                    THEME.muted
+                }),
+            ),
         ]));
     } else {
         lines.push(Line::from(Span::styled(

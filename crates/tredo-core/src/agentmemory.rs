@@ -42,7 +42,12 @@ impl AgentMemoryClient {
             "tier": "episodic",
             "importance": 0.7
         });
-        let resp = self.client.post(&url).json(&body).send().await
+        let resp = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
             .map_err(|e| format!("memory remember error: {}", e))?;
         let status = resp.status();
         if status.as_u16() == 201 {
@@ -56,8 +61,16 @@ impl AgentMemoryClient {
     /// Search memory for relevant content matching a query via smart search.
     /// Returns a list of content strings for injection into LLM prompts.
     pub async fn recall(&self, query: &str) -> Result<Vec<String>, String> {
-        let url = format!("{}/search/smart?q={}", self.base_url, urlencoding::encode(query));
-        let resp = self.client.get(&url).send().await
+        let url = format!(
+            "{}/search/smart?q={}",
+            self.base_url,
+            urlencoding::encode(query)
+        );
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
             .map_err(|e| format!("memory recall error: {}", e))?;
         let data: Vec<serde_json::Value> = resp.json().await.map_err(|e| e.to_string())?;
         Ok(data
@@ -73,35 +86,55 @@ impl AgentMemoryClient {
 
     /// Get memory system health stats.
     pub async fn health(&self) -> Result<serde_json::Value, String> {
-        let resp = self.client.get(format!("{}/health", self.base_url)).send().await
+        let resp = self
+            .client
+            .get(format!("{}/health", self.base_url))
+            .send()
+            .await
             .map_err(|e| format!("memory health error: {}", e))?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
     /// Get storage stats with tier breakdown.
     pub async fn stats(&self) -> Result<serde_json::Value, String> {
-        let resp = self.client.get(format!("{}/stats", self.base_url)).send().await
+        let resp = self
+            .client
+            .get(format!("{}/stats", self.base_url))
+            .send()
+            .await
             .map_err(|e| format!("memory stats error: {}", e))?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
     /// Trigger a consolidation cycle.
     pub async fn consolidate(&self) -> Result<serde_json::Value, String> {
-        let resp = self.client.post(format!("{}/consolidate", self.base_url)).send().await
+        let resp = self
+            .client
+            .post(format!("{}/consolidate", self.base_url))
+            .send()
+            .await
             .map_err(|e| format!("memory consolidate error: {}", e))?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
     /// Trigger an evolution (sleep-time) cycle.
     pub async fn evolve(&self) -> Result<serde_json::Value, String> {
-        let resp = self.client.post(format!("{}/evolve", self.base_url)).send().await
+        let resp = self
+            .client
+            .post(format!("{}/evolve", self.base_url))
+            .send()
+            .await
             .map_err(|e| format!("memory evolve error: {}", e))?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
     /// Promote a record to a higher memory tier.
     pub async fn promote(&self, id: &str, tier: &str) -> Result<(), String> {
-        let resp = self.client.post(format!("{}/tiers/promote/{}/{}", self.base_url, id, tier)).send().await
+        let resp = self
+            .client
+            .post(format!("{}/tiers/promote/{}/{}", self.base_url, id, tier))
+            .send()
+            .await
             .map_err(|e| format!("memory promote error: {}", e))?;
         if resp.status().is_success() {
             Ok(())

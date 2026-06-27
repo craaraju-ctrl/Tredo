@@ -419,7 +419,7 @@ impl EventBus for InMemoryEventBus {
                     }
                     Err(broadcast::error::RecvError::Closed) => break,
                     Err(broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::warn!(lagged = n, pattern = %pattern_owned, "Broadcast receiver lagged");
+                        tracing::warn!(lagged = n, pattern = %pattern_owned, "Broadcast receiver lagged");
                     }
                 }
             }

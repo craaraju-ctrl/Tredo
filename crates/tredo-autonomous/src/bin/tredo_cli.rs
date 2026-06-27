@@ -46,9 +46,7 @@ fn print_usage() {
     println!("=== Project Tredo: Autonomous AI Execution CLI ===");
     println!("Usage:");
     println!("  tredo-cli validate <csv_path> <symbol>   Run walk-forward out-of-sample backtests");
-    println!(
-        "  tredo-cli self-evolve [cycles] [--induce] [--symbols BTC,ETH]"
-    );
+    println!("  tredo-cli self-evolve [cycles] [--induce] [--symbols BTC,ETH]");
     println!(
         "                                           Run the self-evolution loop and report compounding"
     );
@@ -113,11 +111,11 @@ async fn run_self_evolution(
 
     let orchestrator = initialize_autonomous_system().await?;
     let validator = SelfEvolutionValidator::new(orchestrator);
-    let report = validator
+    // run_extended_validation already prints the full summary on completion.
+    let _report = validator
         .run_extended_validation(&symbols, cycles, induce)
         .await?;
 
-    println!("\n{}", report.summary());
     Ok(())
 }
 
