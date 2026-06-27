@@ -102,7 +102,7 @@ impl VectorMemory {
         }
         let query_embedding_f32 = llm.embed_text(query_text).await?;
         let query_embedding_f64: Vec<f64> = query_embedding_f32.iter().map(|&x| x as f64).collect();
-        Ok(self.search_by_vector_async(query_embedding_f64.as_slice(), top_k).await?)
+        self.search_by_vector_async(query_embedding_f64.as_slice(), top_k).await
     }
 
     async fn search_by_vector_async(
