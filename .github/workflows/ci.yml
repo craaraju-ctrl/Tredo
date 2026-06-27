@@ -46,7 +46,7 @@ jobs:
             tredo-cargo-
 
       - name: cargo build (workspace)
-        run: cargo build --workspace --release
+        run: cargo build --workspace
 
       - name: cargo clippy
         run: cargo clippy --workspace -- -D warnings
