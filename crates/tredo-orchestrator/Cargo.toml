@@ -1,0 +1,34 @@
+[package]
+name = "tredo-orchestrator"
+version.workspace = true
+description = "tredo-orchestrator — Autonomous brain + HTTP API + loops (primary backend for tredo Terminal UI)"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+
+[dependencies]
+tredo-core = { path = "../tredo-core" }
+tredo-autonomous = { path = "../tredo-autonomous" }
+tredo-runtime = { path = "../tredo-runtime" }
+tredo-broker-zerodha = { path = "../tredo-broker-zerodha" }
+tredo-broker-alpaca = { path = "../tredo-broker-alpaca" }
+tredo-broker-upstox = { path = "../tredo-broker-upstox" }
+tredo-broker-angelone = { path = "../tredo-broker-angelone" }
+tredo-broker-5paisa = { path = "../tredo-broker-5paisa" }
+tredo-eventbus = { path = "../tredo-eventbus" }
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { workspace = true }
+reqwest = { version = "0.11", features = ["json"] }
+axum = { version = "0.7", features = ["macros", "ws"] }
+tower-http = { version = "0.5", features = ["cors", "fs"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[features]
+lancedb = ["tredo-core/lancedb"]

@@ -1,0 +1,62 @@
+# tredo-compliance — Pre-Trade Compliance Gateway Configuration
+# Copy this file to ~/.tredo/compliance.toml and customize as needed.
+
+[general]
+# Path to the SQLite audit log database
+db_path = "~/.tredo/compliance.db"
+# Log level: "info" | "warn" | "error"
+log_level = "info"
+
+[server]
+# HTTP listen address for the /check endpoint
+host = "127.0.0.1"
+port = 9720
+
+[rules]
+# ── CRITICAL Rules (Fail-Close) ──────────────────────────────────────────
+
+# Maximum price deviation from current market (percentage)
+# Blocks orders where entry price differs from market price by more than this %
+max_price_deviation_pct = 3.0
+
+# Maximum position value as percentage of portfolio equity
+max_position_size_pct = 20.0
+
+# Maximum daily loss as percentage of portfolio equity
+# When hit, all trading is blocked for the rest of the trading day
+max_daily_loss_pct = 5.0
+
+# Maximum leverage allowed (1 = no leverage)
+max_leverage = 3.0
+
+# Maximum drawdown from peak portfolio equity (percentage)
+# When hit, system enters emergency cooldown
+max_drawdown_pct = 25.0
+
+# ── HIGH Rules (Fail-Close) ──────────────────────────────────────────────
+
+# Maximum consecutive losses before mandatory cooldown
+max_consecutive_losses = 5
+
+# Minimum confluence score to enter a trade (0.0 to 1.0)
+min_confluence_score = 0.4
+
+# Maximum portfolio heat (total risk / equity as percentage)
+max_portfolio_heat_pct = 12.0
+
+# ── MEDIUM Rules (Fail-Close, but overridable) ───────────────────────────
+
+# Minimum risk-reward ratio (take_profit_diff / stop_loss_diff)
+min_risk_reward = 1.5
+
+# Maximum single-symbol exposure as percentage of portfolio
+max_single_symbol_exposure_pct = 25.0
+
+# Maximum trades per day
+max_trades_per_day = 20
+
+# ── LOW Rules (Warning Only) ─────────────────────────────────────────────
+
+# Minimum 30-day average daily volume ratio (trade size / avg daily volume)
+# Warnings only — does not block trading
+min_adv_ratio = 0.01

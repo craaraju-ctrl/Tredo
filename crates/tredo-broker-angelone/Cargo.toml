@@ -1,0 +1,29 @@
+[package]
+name = "tredo-broker-angelone"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Angel One SmartAPI broker adapter for TREDO — free Indian discount broker via Angel One SmartAPI (JWT auth)"
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+
+[dependencies]
+tredo-core = { path = "../tredo-core" }
+async-trait = "0.1"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { workspace = true }
+reqwest = { version = "0.12", features = ["json"] }
+tracing = "0.1"
+thiserror = "1.0"
+base64 = "0.22"
+sha2 = "0.10"
+hmac = "0.12"
+sha1 = "0.10"
+hex = "0.4"
+
+[features]
+lancedb = ["tredo-core/lancedb"]

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tredo.orchestrator</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/varma/Desktop/Agentic application/Tredo/scripts/start_orchestrator.sh</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>LOG_DIR</key>
+        <string>/Users/varma/Library/Logs/tredo</string>
+    </dict>
+
+    <!-- Keep alive = auto-restart on crash + start on boot -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Run at load time (i.e. on user login if LaunchAgent, on boot if LaunchDaemon) -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart with 5-second delay if it crashes -->
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+
+    <!-- Standard I/O paths for debugging -->
+    <key>StandardOutPath</key>
+    <string>/Users/varma/Library/Logs/tredo/stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/varma/Library/Logs/tredo/stderr.log</string>
+
+    <!-- Working directory -->
+    <key>WorkingDirectory</key>
+    <string>/Users/varma/Desktop/Agentic application/Tredo</string>
+
+    <!-- Only run when user is logged in (LaunchAgent, not LaunchDaemon) -->
+    <key>LimitLoadToSessionType</key>
+    <array>
+        <string>Aqua</string>
+        <string>Background</string>
+    </array>
+</dict>
+</plist>

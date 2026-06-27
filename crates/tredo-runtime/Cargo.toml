@@ -1,0 +1,38 @@
+[package]
+name = "tredo-runtime"
+version.workspace = true
+description = "Unified runtime for tredo — event-driven, multi-mode (paper/live/backtest/validate/research), production-grade"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+tredo-core = { path = "../tredo-core" }
+tredo-autonomous = { path = "../tredo-autonomous" }
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { workspace = true }
+thiserror = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+uuid = { version = "1", features = ["v4"] }
+parking_lot = "0.12"
+clap = { version = "4", features = ["derive"] }
+csv = "1.3"
+reqwest = { version = "0.11", features = ["json"] }
+toml = "0.8"
+tredo-broker-zerodha = { path = "../tredo-broker-zerodha" }
+tredo-broker-alpaca = { path = "../tredo-broker-alpaca" }
+tredo-broker-upstox = { path = "../tredo-broker-upstox" }
+tredo-broker-angelone = { path = "../tredo-broker-angelone" }
+tredo-broker-5paisa = { path = "../tredo-broker-5paisa" }
+
+[features]
+lancedb = ["tredo-core/lancedb"]
+
+[[bin]]
+name = "tredo"
+path = "src/bin/tredo.rs"

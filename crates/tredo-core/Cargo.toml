@@ -1,0 +1,30 @@
+[package]
+name = "tredo-core"
+version.workspace = true
+description = "tredo-core — Disciplined Core, memory (redb), LLM, Kronos client (Trading Real-time Edge Decision Optimisation)"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+
+[features]
+default = []
+lancedb = []
+
+[dependencies]
+async-trait = "0.1"
+petgraph = { version = "0.6", features = ["serde-1"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { workspace = true }
+log = "0.4"
+reqwest = { version = "0.11", features = ["json"] }
+ureq = { version = "2.9", features = ["json"] }
+urlencoding = "2.1"
+quick-xml = "0.31"
+
+[dev-dependencies]
+rand = "0.8"

@@ -1,0 +1,26 @@
+[package]
+name = "tredo-tui"
+version.workspace = true
+edition.workspace = true
+description = "tredo — Full Terminal UI (ratatui) for Trading Real-time Edge Decision Optimisation. The primary beautiful interface for the autonomous co-pilot."
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+
+[dependencies]
+ratatui = "0.29"
+crossterm = { version = "0.28", features = ["event-stream"] }
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { workspace = true }
+anyhow = "1"
+futures = "0.3"
+tungstenite = "0.24"
+
+[[bin]]
+name = "tredo-tui"
+path = "src/main.rs"

@@ -1,0 +1,589 @@
+//! # tredo HTTP Server — Production Trading Backend
+//!
+//! Serves the frontend statically and provides REST API endpoints for
+//! all trading operations. Routes through `BrokerRegistry` which dispatches
+//! to either `PaperBroker` (virtual money) or a live broker adapter (real money).
+//!
+//! ## API Endpoints
+//! - `GET  /api/summary`       — Portfolio summary (current mode)
+//! - `GET  /api/positions`     — Open positions
+//! - `GET  /api/trades`        — Recent trade history
+//! - `POST /api/trade`         — Place an order
+//! - `POST /api/close`         — Close a position
+//! - `POST /api/price`         — Update market price for a symbol
+//! - `POST /api/reset`         — Reset paper portfolio
+//! - `GET  /api/mode`          — Get current mode (paper/live)
+//! - `POST /api/mode`          — Switch mode
+//! - `POST /api/broker/config` — Update broker API config
+//! - `POST /api/broker/test`   — Test broker connection
+//! - `WS   /ws`                — Real-time updates
+//!
+//! ## Run
+//! ```bash
+//! cargo run -p tredo-server -- --port 8080
+//! ```
+
+use axum::{
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        State,
+    },
+    response::IntoResponse,
+    routing::{get, post},
+    Json, Router,
+};
+use futures::{SinkExt, StreamExt};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::broadcast;
+use tower_http::cors::CorsLayer;
+use tower_http::services::ServeDir;
+use tredo_core::paper_engine::*;
+use tredo_core::TradeDirection;
+use tredo_runtime::broker::{BrokerConfig, BrokerPluginManager};
+
+// ── Application State ────────────────────────────────────────────────────────
+
+struct AppState {
+    registry: BrokerRegistry,
+    price_tx: broadcast::Sender<PriceUpdate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PriceUpdate {
+    symbol: String,
+    price: f64,
+    timestamp: i64,
+}
+
+// ── API Response Types ───────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+struct ApiResponse<T: Serialize> {
+    success: bool,
+    data: Option<T>,
+    error: Option<String>,
+}
+
+impl<T: Serialize> ApiResponse<T> {
+    fn ok(data: T) -> Self {
+        Self {
+            success: true,
+            data: Some(data),
+            error: None,
+        }
+    }
+
+    fn err(msg: &str) -> Json<Self> {
+        Json(Self {
+            success: false,
+            data: None,
+            error: Some(msg.to_string()),
+        })
+    }
+}
+
+impl ApiResponse<()> {
+    fn ok_empty() -> Json<Self> {
+        Json(ApiResponse {
+            success: true,
+            data: None,
+            error: None,
+        })
+    }
+}
+
+// ── Request Types ────────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct TradeRequest {
+    symbol: String,
+    direction: String,
+    qty: i32,
+    order_type: Option<String>,
+    price: Option<f64>,
+    stop_loss: Option<f64>,
+    take_profit: Option<f64>,
+    strategy: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CloseRequest {
+    position_id: String,
+    exit_price: f64,
+}
+
+#[derive(Deserialize)]
+struct PriceRequest {
+    symbol: String,
+    price: f64,
+}
+
+#[derive(Deserialize)]
+struct ModeRequest {
+    mode: String,
+}
+
+#[derive(Deserialize)]
+struct BrokerConfigRequest {
+    /// Broker plugin ID: "zerodha", "alpaca", etc.
+    broker: String,
+    /// API key (maps to broker-specific config key)
+    #[serde(default)]
+    api_key_id: Option<String>,
+    /// API secret (maps to broker-specific config key)
+    #[serde(default)]
+    api_secret_key: Option<String>,
+    /// Legacy alias for api_key_id
+    #[serde(default)]
+    api_key: Option<String>,
+    /// Legacy alias for api_secret_key
+    #[serde(default)]
+    api_secret: Option<String>,
+    /// Broker-specific base URL (optional, uses default)
+    #[serde(default)]
+    base_url: Option<String>,
+    /// Paper mode flag (Alpaca-specific: defaults to true for safety)
+    #[serde(default = "default_paper")]
+    paper: bool,
+}
+
+fn default_paper() -> bool {
+    true
+}
+
+// ── Routes ───────────────────────────────────────────────────────────────────
+
+async fn handle_get_summary(
+    State(state): State<Arc<AppState>>,
+) -> Json<ApiResponse<PortfolioSummary>> {
+    let broker = state.registry.active_broker().await;
+    match broker.get_summary().await {
+        Ok(s) => Json(ApiResponse::ok(s)),
+        Err(e) => Json(ApiResponse {
+            success: false,
+            data: None,
+            error: Some(e),
+        }),
+    }
+}
+
+async fn handle_get_positions(
+    State(state): State<Arc<AppState>>,
+) -> Json<ApiResponse<Vec<Position>>> {
+    let broker = state.registry.active_broker().await;
+    match broker.get_positions().await {
+        Ok(p) => Json(ApiResponse::ok(p)),
+        Err(e) => Json(ApiResponse {
+            success: false,
+            data: None,
+            error: Some(e),
+        }),
+    }
+}
+
+async fn handle_get_trades(
+    State(state): State<Arc<AppState>>,
+) -> Json<ApiResponse<Vec<ClosedTrade>>> {
+    let broker = state.registry.active_broker().await;
+    match broker.get_recent_trades(50).await {
+        Ok(t) => Json(ApiResponse::ok(t)),
+        Err(e) => Json(ApiResponse {
+            success: false,
+            data: None,
+            error: Some(e),
+        }),
+    }
+}
+
+async fn handle_place_trade(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<TradeRequest>,
+) -> Json<ApiResponse<String>> {
+    let direction = match req.direction.to_lowercase().as_str() {
+        "long" | "buy" => TradeDirection::Long,
+        "short" | "sell" => TradeDirection::Short,
+        _ => return ApiResponse::err("Invalid direction. Use 'long' or 'short'."),
+    };
+
+    let order_type = match req.order_type.as_deref().unwrap_or("market") {
+        "market" => OrderType::Market,
+        "limit" => OrderType::Limit,
+        _ => return ApiResponse::err("Invalid order type. Use 'market' or 'limit'."),
+    };
+
+    let request = OrderRequest {
+        symbol: req.symbol,
+        direction,
+        order_type,
+        qty: req.qty,
+        price: req.price,
+        stop_loss: req.stop_loss,
+        take_profit: req.take_profit,
+        strategy: req.strategy,
+        client_order_id: None,
+    };
+
+    // Get market price (use provided price or request price)
+    let market_price = req.price.unwrap_or(0.0);
+    if market_price <= 0.0 {
+        return ApiResponse::err("Price must be provided and positive.");
+    }
+
+    let broker = state.registry.active_broker().await;
+    match broker.place_order(request, market_price).await {
+        Ok(id) => Json(ApiResponse::ok(id)),
+        Err(e) => ApiResponse::err(&e),
+    }
+}
+
+async fn handle_close_position(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<CloseRequest>,
+) -> Json<ApiResponse<ClosedTrade>> {
+    let broker = state.registry.active_broker().await;
+    match broker
+        .close_position(&req.position_id, req.exit_price)
+        .await
+    {
+        Ok(t) => Json(ApiResponse::ok(t)),
+        Err(e) => ApiResponse::err(&e),
+    }
+}
+
+async fn handle_update_price(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<PriceRequest>,
+) -> Json<ApiResponse<Vec<ClosedTrade>>> {
+    let broker = state.registry.active_broker().await;
+    match broker.update_price(&req.symbol, req.price).await {
+        Ok(closed) => {
+            // Broadcast price update
+            let _ = state.price_tx.send(PriceUpdate {
+                symbol: req.symbol.clone(),
+                price: req.price,
+                timestamp: chrono::Utc::now().timestamp_millis(),
+            });
+            Json(ApiResponse::ok(closed))
+        }
+        Err(e) => ApiResponse::err(&e),
+    }
+}
+
+async fn handle_reset(State(state): State<Arc<AppState>>) -> Json<ApiResponse<()>> {
+    let broker = state.registry.active_broker().await;
+    match broker.reset().await {
+        Ok(()) => ApiResponse::ok_empty(),
+        Err(e) => ApiResponse::err(&e),
+    }
+}
+
+async fn handle_get_mode(
+    State(state): State<Arc<AppState>>,
+) -> Json<ApiResponse<serde_json::Value>> {
+    let mode = state.registry.current_mode().await;
+    let name = state.registry.current_broker_name().await;
+    Json(ApiResponse::ok(serde_json::json!({
+        "mode": mode.to_string(),
+        "broker": name,
+    })))
+}
+
+async fn handle_set_mode(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ModeRequest>,
+) -> Json<ApiResponse<String>> {
+    let mode = match req.mode.to_lowercase().as_str() {
+        "paper" => TradingMode::Paper,
+        "live" => TradingMode::Live,
+        _ => return ApiResponse::err("Invalid mode. Use 'paper' or 'live'."),
+    };
+    match state.registry.set_mode(mode).await {
+        Ok(()) => Json(ApiResponse::ok(mode.to_string())),
+        Err(e) => ApiResponse::err(&e),
+    }
+}
+
+async fn handle_broker_config(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<BrokerConfigRequest>,
+) -> Json<ApiResponse<String>> {
+    // Build the BrokerConfig from the request, mapping legacy field names
+    let mut config = BrokerConfig::default();
+
+    // Primary field names (api_key_id, api_secret_key) take precedence over legacy (api_key, api_secret)
+    let api_key = req.api_key_id.or(req.api_key);
+    let api_secret = req.api_secret_key.or(req.api_secret);
+
+    if let Some(ref k) = api_key {
+        config.set("api_key_id", k);
+        // Also set for brokers that use "api_key" as their config key (e.g., zerodha)
+        config.set("api_key", k);
+    }
+    if let Some(ref s) = api_secret {
+        config.set("api_secret_key", s);
+        config.set("api_secret", s);
+    }
+    if let Some(ref url) = req.base_url {
+        config.set("base_url", url);
+    }
+    config.set("paper", if req.paper { "true" } else { "false" });
+
+    // Discover plugins and instantiate the requested broker
+    let plugin_mgr = BrokerPluginManager::new();
+    match plugin_mgr.instantiate(&req.broker, &config).await {
+        Ok(handle) => {
+            // Register with the broker registry and switch to live mode
+            let adapter = handle.adapter;
+            state
+                .registry
+                .register_live_broker(Arc::from(adapter))
+                .await;
+
+            match state.registry.set_mode(TradingMode::Live).await {
+                Ok(()) => {
+                    let broker_name = state.registry.current_broker_name().await;
+                    Json(ApiResponse::ok(format!(
+                        "✓ {} connected and set as active broker",
+                        broker_name
+                    )))
+                }
+                Err(e) => ApiResponse::err(&format!(
+                    "Broker connected but failed to switch mode: {}",
+                    e
+                )),
+            }
+        }
+        Err(e) => ApiResponse::err(&format!(
+            "Failed to configure broker '{}': {}",
+            req.broker, e
+        )),
+    }
+}
+
+async fn handle_broker_test(State(state): State<Arc<AppState>>) -> Json<ApiResponse<String>> {
+    let broker = state.registry.active_broker().await;
+    match broker.connect().await {
+        Ok(()) => Json(ApiResponse::ok(format!(
+            "Connected to {}",
+            broker.broker_name()
+        ))),
+        Err(e) => ApiResponse::err(&e),
+    }
+}
+
+async fn handle_get_status(
+    State(state): State<Arc<AppState>>,
+) -> Json<ApiResponse<serde_json::Value>> {
+    let broker = state.registry.active_broker().await;
+    let mode = state.registry.current_mode().await;
+    let summary = broker.get_summary().await.ok();
+    let positions = broker.get_positions().await.unwrap_or_default();
+
+    Json(ApiResponse::ok(serde_json::json!({
+        "mode": mode.to_string(),
+        "broker": broker.broker_name(),
+        "summary": summary,
+        "open_positions": positions.len(),
+        "trading_enabled": true,
+    })))
+}
+
+// ── Health Check ─────────────────────────────────────────────────────────────
+
+async fn handle_health(State(state): State<Arc<AppState>>) -> Json<ApiResponse<serde_json::Value>> {
+    let mode = state.registry.current_mode().await;
+    let broker_name = state.registry.current_broker_name().await;
+    let summary = state
+        .registry
+        .active_broker()
+        .await
+        .get_summary()
+        .await
+        .ok();
+
+    Json(ApiResponse::ok(serde_json::json!({
+        "status": "ok",
+        "mode": mode.to_string(),
+        "broker": broker_name,
+        "open_positions": summary.as_ref().map_or(0, |s| s.open_positions),
+    })))
+}
+
+// ── Backtest Results ─────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+struct BacktestResult {
+    symbol: String,
+    total_trades: u32,
+    winning_trades: u32,
+    losing_trades: u32,
+    win_rate: f64,
+    total_pnl: f64,
+    max_drawdown_pct: f64,
+}
+
+async fn handle_backtest_results(
+    State(state): State<Arc<AppState>>,
+) -> Json<ApiResponse<Vec<BacktestResult>>> {
+    let broker = state.registry.active_broker().await;
+    let trades = broker.get_recent_trades(500).await.unwrap_or_default();
+
+    // Group by symbol and compute stats
+    let mut by_symbol: std::collections::HashMap<String, Vec<&ClosedTrade>> =
+        std::collections::HashMap::new();
+    for trade in &trades {
+        by_symbol
+            .entry(trade.symbol.clone())
+            .or_default()
+            .push(trade);
+    }
+
+    let results: Vec<BacktestResult> = by_symbol
+        .iter()
+        .map(|(symbol, symbol_trades)| {
+            let total = symbol_trades.len() as u32;
+            let winning = symbol_trades
+                .iter()
+                .filter(|t| t.realized_pnl > 0.0)
+                .count() as u32;
+            let losing = total - winning;
+            let win_rate = if total > 0 {
+                winning as f64 / total as f64 * 100.0
+            } else {
+                0.0
+            };
+            let total_pnl: f64 = symbol_trades.iter().map(|t| t.realized_pnl).sum();
+
+            // Compute max drawdown from cumulative P&L (oldest to newest)
+            let mut cum_pnl = 0.0;
+            let mut peak = 0.0_f64;
+            let mut max_dd_pct = 0.0;
+            for trade in symbol_trades.iter().rev() {
+                cum_pnl += trade.realized_pnl;
+                if cum_pnl > peak {
+                    peak = cum_pnl;
+                }
+                let dd = peak - cum_pnl;
+                if peak > 0.0 {
+                    let dd_pct = dd / peak * 100.0;
+                    if dd_pct > max_dd_pct {
+                        max_dd_pct = dd_pct;
+                    }
+                }
+            }
+
+            BacktestResult {
+                symbol: symbol.clone(),
+                total_trades: total,
+                winning_trades: winning,
+                losing_trades: losing,
+                win_rate,
+                total_pnl,
+                max_drawdown_pct: max_dd_pct,
+            }
+        })
+        .collect();
+
+    Json(ApiResponse::ok(results))
+}
+
+// ── WebSocket ────────────────────────────────────────────────────────────────
+
+async fn handle_ws(State(state): State<Arc<AppState>>, ws: WebSocketUpgrade) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_ws_socket(socket, state))
+}
+
+async fn handle_ws_socket(socket: WebSocket, state: Arc<AppState>) {
+    let mut rx = state.price_tx.subscribe();
+    let (mut sender, _receiver) = socket.split();
+
+    // Send initial state
+    let broker = state.registry.active_broker().await;
+    let initial_state = serde_json::json!({
+        "type": "initial_state",
+        "mode": state.registry.current_mode().await.to_string(),
+        "summary": broker.get_summary().await.ok().unwrap_or_default(),
+        "positions": broker.get_positions().await.unwrap_or_default(),
+    });
+    let _ = sender
+        .send(Message::Text(
+            serde_json::to_string(&initial_state).unwrap(),
+        ))
+        .await;
+
+    // Stream price updates
+    while let Ok(update) = rx.recv().await {
+        let msg = serde_json::json!({
+            "type": "price_update",
+            "symbol": update.symbol,
+            "price": update.price,
+            "timestamp": update.timestamp,
+        });
+        if sender
+            .send(Message::Text(serde_json::to_string(&msg).unwrap()))
+            .await
+            .is_err()
+        {
+            break;
+        }
+    }
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+
+#[tokio::main]
+async fn main() {
+    env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
+    log::info!("[tredo Server] Starting production trading backend...");
+
+    // Initialize paper engine with default config
+    let config = PaperEngineConfig::default();
+    let registry = BrokerRegistry::new(config);
+
+    // Connect paper broker by default
+    registry
+        .set_mode(TradingMode::Paper)
+        .await
+        .expect("Failed to initialize paper broker");
+
+    // Price update broadcast channel
+    let (price_tx, _) = broadcast::channel::<PriceUpdate>(256);
+
+    let state = Arc::new(AppState { registry, price_tx });
+
+    // Build router
+    let app = Router::new()
+        // Serve static frontend files as fallback (catches any unmatched routes)
+        // ServeDir auto-serves index.html for directory requests by default
+        .fallback_service(ServeDir::new("src-tauri/frontend"))
+        // API routes
+        .route("/api/summary", get(handle_get_summary))
+        .route("/api/positions", get(handle_get_positions))
+        .route("/api/trades", get(handle_get_trades))
+        .route("/api/trade", post(handle_place_trade))
+        .route("/api/close", post(handle_close_position))
+        .route("/api/price", post(handle_update_price))
+        .route("/api/reset", post(handle_reset))
+        .route("/api/mode", get(handle_get_mode).post(handle_set_mode))
+        .route("/api/status", get(handle_get_status))
+        .route("/api/health", get(handle_health))
+        .route("/api/backtest/results", get(handle_backtest_results))
+        .route("/api/broker/config", post(handle_broker_config))
+        .route("/api/broker/test", post(handle_broker_test))
+        .route("/ws", get(handle_ws))
+        // CORS for development
+        .layer(CorsLayer::permissive())
+        // Shared state
+        .with_state(state);
+
+    let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+    let addr = format!("0.0.0.0:{}", port);
+    log::info!("[tredo Server] Listening on http://{}", addr);
+
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .expect("Failed to bind address");
+
+    axum::serve(listener, app).await.expect("Server failed");
+}

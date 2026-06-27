@@ -1,0 +1,22 @@
+[package]
+name = "tredo-market-data"
+version.workspace = true
+description = "tredo-market-data — Standalone market data service fetching prices from Binance/Yahoo and broadcasting via NATS"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+
+[dependencies]
+tredo-core = { path = "../tredo-core" }
+tredo-eventbus = { path = "../tredo-eventbus" }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { workspace = true }
+reqwest = { version = "0.11", features = ["json"] }
+async-trait = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

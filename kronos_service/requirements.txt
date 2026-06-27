@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+pandas
+torch
+transformers
+huggingface_hub
+pydantic
+chronos-forecasting
+numpy

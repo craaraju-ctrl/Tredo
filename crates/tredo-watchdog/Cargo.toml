@@ -1,0 +1,21 @@
+[package]
+name = "tredo-watchdog"
+version.workspace = true
+description = "tredo-watchdog — Hardware-level kill switch & heartbeat monitor. Separate binary that monitors orchestrator health and can revoke exchange API keys."
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { workspace = true }
+reqwest = { version = "0.11", features = ["json"] }
+axum = { version = "0.7", features = ["macros"] }
+tower-http = { version = "0.5", features = ["cors"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

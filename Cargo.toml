@@ -1,0 +1,40 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "crates/tredo-core",
+    "crates/tredo-orchestrator",
+    "crates/tredo-autonomous",
+    "crates/tredo-server",
+    "src-tauri",
+    "crates/tredo-tui",
+    "crates/tredo-runtime",
+    "crates/tredo-broker-zerodha", "crates/tredo-broker-alpaca",
+    "crates/tredo-watchdog",
+    "crates/tredo-compliance",
+    "crates/tredo-metrics",
+    "crates/tredo-eventbus",
+    "crates/tredo-market-data",
+    "crates/tredo-broker-upstox",
+    "crates/tredo-broker-angelone",
+    "crates/tredo-broker-5paisa",
+    "crates/tredo-broker-binance",
+]
+
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+license = "MIT"
+description = "TREDO — Trading Real-time Edge Decision Optimisation. A production-grade, Rust-first autonomous agentic trading co-pilot with multi-agent debate, hierarchical memory, self-evolution, and a powerful Terminal UI."
+authors = ["craaraju-ctrl"]
+repository = "https://github.com/craaraju-ctrl/Tredo"
+homepage = "https://github.com/craaraju-ctrl/Tredo"
+readme = "README.md"
+
+# TODO: Remove this pin when lancedb is upgraded to a version using arrow >=52.
+# chrono 0.4.40+ added Datelike::quarter() which conflicts with arrow-arith 51.x's
+# ChronoDateExt::quarter() when the lancedb feature is enabled.
+# Pin to <0.4.40 to keep --features lancedb buildable.
+[workspace.dependencies]
+chrono = { version = ">=0.4.35, <0.4.40", features = ["serde"] }
