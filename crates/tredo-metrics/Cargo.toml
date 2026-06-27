@@ -10,7 +10,7 @@ homepage.workspace = true
 readme.workspace = true
 
 [dependencies]
-axum = { version = "0.7", features = ["macros"] }
+axum = { version = "0.8", features = ["macros"] }
 chrono = { workspace = true }
 rusqlite = { version = "0.31", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
