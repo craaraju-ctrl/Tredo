@@ -27,6 +27,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let symbol = &args[3];
             run_walk_forward(csv_path, symbol).await?;
         }
+        "self-evolve" => {
+            run_self_evolution(&args[2..]).await?;
+        }
         "daemon" => {
             println!("[Tredo CLI] Initializing autonomous daemon thread...");
             println!("[Tredo CLI] Connection to local Ollama (http://localhost:11434)...");
@@ -44,8 +47,78 @@ fn print_usage() {
     println!("Usage:");
     println!("  tredo-cli validate <csv_path> <symbol>   Run walk-forward out-of-sample backtests");
     println!(
+        "  tredo-cli self-evolve [cycles] [--induce] [--symbols BTC,ETH]"
+    );
+    println!(
+        "                                           Run the self-evolution loop and report compounding"
+    );
+    println!(
         "  tredo-cli daemon                         Spin up the autonomous live/paper trading loop"
     );
+}
+
+/// Run the extended self-evolution validation harness (engineering loop).
+///
+/// Boots the autonomous orchestrator, then drives N cycles of the full agentic
+/// pipeline (optionally inducing regret) and prints a compounding-improvement
+/// report. Symbols come from `--symbols`, else the `WATCHLIST` env var, else a
+/// BTC/ETH default.
+async fn run_self_evolution(
+    rest: &[String],
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use tredo_autonomous::self_evolution::SelfEvolutionValidator;
+    use tredo_autonomous::state::initialize_autonomous_system;
+
+    // Parse args: optional positional cycle count, optional `--induce`, optional
+    // `--symbols A,B,C`.
+    let mut cycles: usize = 20;
+    let mut induce = false;
+    let mut symbols_arg: Option<String> = None;
+
+    let mut i = 0;
+    while i < rest.len() {
+        match rest[i].as_str() {
+            "--induce" | "--induce-regret" => induce = true,
+            "--symbols" => {
+                if i + 1 < rest.len() {
+                    symbols_arg = Some(rest[i + 1].clone());
+                    i += 1;
+                }
+            }
+            other => {
+                if let Ok(n) = other.parse::<usize>() {
+                    cycles = n;
+                }
+            }
+        }
+        i += 1;
+    }
+
+    let symbols_owned: Vec<String> = symbols_arg
+        .or_else(|| env::var("WATCHLIST").ok())
+        .map(|s| {
+            s.split(',')
+                .map(|t| t.trim().to_string())
+                .filter(|t| !t.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .filter(|v: &Vec<String>| !v.is_empty())
+        .unwrap_or_else(|| vec!["BTC".to_string(), "ETH".to_string()]);
+    let symbols: Vec<&str> = symbols_owned.iter().map(|s| s.as_str()).collect();
+
+    println!(
+        "[Tredo CLI] Booting autonomous orchestrator for self-evolution ({} cycles, induce={}, symbols={:?})...",
+        cycles, induce, symbols
+    );
+
+    let orchestrator = initialize_autonomous_system().await?;
+    let validator = SelfEvolutionValidator::new(orchestrator);
+    let report = validator
+        .run_extended_validation(&symbols, cycles, induce)
+        .await?;
+
+    println!("\n{}", report.summary());
+    Ok(())
 }
 
 /// Parses historical CSV files and executes the WalkForwardRunner

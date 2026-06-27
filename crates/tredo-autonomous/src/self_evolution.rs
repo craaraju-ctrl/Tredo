@@ -406,7 +406,7 @@ impl SelfEvolutionValidator {
         }
 
         // Compute buckets
-        let buckets = self.compute_buckets(&all_cycles);
+        let buckets = Self::compute_buckets(&all_cycles);
 
         // Trend analysis
         let (regret_first, regret_second) = Self::compute_half_regret(&buckets);
@@ -482,7 +482,7 @@ impl SelfEvolutionValidator {
     }
 
     /// Group cycles into buckets of BUCKET_SIZE and compute aggregate stats.
-    fn compute_buckets(&self, cycles: &[CycleMetrics]) -> Vec<BucketStats> {
+    fn compute_buckets(cycles: &[CycleMetrics]) -> Vec<BucketStats> {
         if cycles.is_empty() {
             return vec![];
         }
@@ -690,5 +690,85 @@ impl SelfEvolutionValidator {
         parts.push(overall);
 
         parts.join(" ")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mk_cycle(n: usize, regret: Option<f64>, outcome: Option<&str>, hold: bool) -> CycleMetrics {
+        CycleMetrics {
+            cycle_number: n,
+            symbol: "BTC".to_string(),
+            decision: if hold { "HOLD".to_string() } else { "BUY/SELL".to_string() },
+            confidence: 0.7,
+            confluence: 0.6,
+            regret_score: regret,
+            trade_outcome: outcome.map(|s| s.to_string()),
+            exit_reason: None,
+            rule_change_applied: false,
+            rules_snapshot: RulesSnapshot {
+                max_risk_per_trade: 0.02,
+                max_daily_drawdown: 0.05,
+                max_consecutive_losses: 3,
+                min_confluence_score: 0.5,
+            },
+            timestamp: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn buckets_group_by_size_and_count_outcomes() {
+        // 25 cycles → 3 buckets (10, 10, 5)
+        let mut cycles = Vec::new();
+        for i in 0..25 {
+            let outcome = if i % 2 == 0 { Some("WIN") } else { Some("LOSS") };
+            cycles.push(mk_cycle(i, Some(0.4), outcome, false));
+        }
+        let buckets = SelfEvolutionValidator::compute_buckets(&cycles);
+        assert_eq!(buckets.len(), 3);
+        assert_eq!(buckets[0].cycle_count, 10);
+        assert_eq!(buckets[1].cycle_count, 10);
+        assert_eq!(buckets[2].cycle_count, 5);
+        // wins + losses per full bucket should sum to the cycle count
+        assert_eq!(buckets[0].win_count + buckets[0].loss_count, 10);
+    }
+
+    #[test]
+    fn half_regret_detects_improvement() {
+        // First half high regret, second half low regret.
+        let mut cycles = Vec::new();
+        for i in 0..20 {
+            let regret = if i < 10 { 0.8 } else { 0.2 };
+            cycles.push(mk_cycle(i, Some(regret), Some("WIN"), false));
+        }
+        let buckets = SelfEvolutionValidator::compute_buckets(&cycles);
+        let (first, second) = SelfEvolutionValidator::compute_half_regret(&buckets);
+        assert!(first > second, "first-half regret should exceed second-half");
+        assert!((first - 0.8).abs() < 1e-9);
+        assert!((second - 0.2).abs() < 1e-9);
+    }
+
+    #[test]
+    fn half_win_rate_computes_correctly() {
+        // First half all wins, second half all losses.
+        let mut cycles = Vec::new();
+        for i in 0..20 {
+            let outcome = if i < 10 { Some("WIN") } else { Some("LOSS") };
+            cycles.push(mk_cycle(i, Some(0.5), outcome, false));
+        }
+        let buckets = SelfEvolutionValidator::compute_buckets(&cycles);
+        let (first, second) = SelfEvolutionValidator::compute_half_win_rates(&buckets);
+        assert!((first - 1.0).abs() < 1e-9, "first half should be 100% win rate");
+        assert!((second - 0.0).abs() < 1e-9, "second half should be 0% win rate");
+    }
+
+    #[test]
+    fn empty_cycles_produce_no_buckets() {
+        let buckets = SelfEvolutionValidator::compute_buckets(&[]);
+        assert!(buckets.is_empty());
+        let (rf, rs) = SelfEvolutionValidator::compute_half_regret(&buckets);
+        assert_eq!((rf, rs), (0.0, 0.0));
     }
 }

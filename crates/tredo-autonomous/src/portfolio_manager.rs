@@ -59,7 +59,7 @@ impl PortfolioManagerAgent {
                         (pos.entry_price - current_price) * pos.quantity
                     }
                 };
-                pos.unrealized_pnl_pct = if pos.entry_price > 0.0 {
+                pos.unrealized_pnl_pct = if pos.entry_price > 0.0 && pos.quantity != 0.0 {
                     pos.unrealized_pnl / (pos.entry_price * pos.quantity) * 100.0
                 } else {
                     0.0
@@ -223,7 +223,7 @@ impl PortfolioManagerAgent {
                 .sum();
             portfolio.total_equity = portfolio.cash_balance + open_value;
 
-            if portfolio.daily_pnl < 0.0 {
+            if portfolio.daily_pnl < 0.0 && portfolio.total_equity > 0.0 {
                 let dd = portfolio.daily_pnl.abs() / portfolio.total_equity;
                 if dd > portfolio.max_drawdown_today {
                     portfolio.max_drawdown_today = dd;

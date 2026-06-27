@@ -5,6 +5,7 @@ import pandas as pd
 from model import KronosPredictor
 import uvicorn
 import os
+import time
 
 app = FastAPI(title="Kronos Forecasting Service for tredo", version="0.1.0")
 
@@ -14,6 +15,7 @@ app = FastAPI(title="Kronos Forecasting Service for tredo", version="0.1.0")
 
 print("[KronosService] Loading Kronos model...")
 predictor = KronosPredictor()
+_start_time = time.time()
 print("[KronosService] Kronos model loaded successfully and ready.")
 
 class OhlcvBar(BaseModel):
@@ -23,6 +25,10 @@ class OhlcvBar(BaseModel):
     low: float
     close: float
     volume: float
+
+    def to_dict(self) -> dict:
+        """Pydantic v2 compatible — avoids deprecated .dict()"""
+        return self.model_dump()
 
 class ForecastRequest(BaseModel):
     symbol: str
@@ -39,13 +45,21 @@ class ForecastResponse(BaseModel):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "model": "chronos-bolt", "uptime_seconds": 0}
+    uptime = int(time.time() - _start_time)
+    return {
+        "status": "ok",
+        "model": "chronos-bolt",
+        "version": app.version,
+        "uptime_seconds": uptime,
+        "uptime_str": f"{uptime // 86400}d {(uptime % 86400) // 3600}h {(uptime % 3600) // 60}m",
+        "predictor_ready": predictor.using_real_model,
+    }
 
 @app.post("/forecast", response_model=ForecastResponse)
 async def get_forecast(request: ForecastRequest):
     try:
-        # Convert input to DataFrame
-        data = [bar.dict() for bar in request.ohlcv]
+        # Convert input to DataFrame — use model_dump() for Pydantic v2 compat
+        data = [bar.model_dump() for bar in request.ohlcv]
         df = pd.DataFrame(data)
         df['timestamp'] = pd.to_datetime(df['timestamp'], format='ISO8601')
         df = df.set_index('timestamp')

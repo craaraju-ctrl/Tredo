@@ -14,6 +14,23 @@ use tredo_core::{
 use tredo_eventbus::{subjects as event_subjects, EventBus, TredoEvent};
 use tracing::{info, warn};
 
+/// Read a loop cadence (in seconds) from an env var, falling back to `default`.
+///
+/// This lets the self-evolution / engineering loop be exercised on demand during
+/// observation and validation runs instead of being pinned to its production
+/// cadence. Invalid or zero values fall back to the default.
+///
+///   TREDO_FAST_LOOP_SECS   (default 5)
+///   TREDO_MEDIUM_LOOP_SECS (default 30)
+///   TREDO_SLOW_LOOP_SECS   (default 86400 = 24h)
+fn loop_cadence_secs(var: &str, default: u64) -> u64 {
+    std::env::var(var)
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|&v| v > 0)
+        .unwrap_or(default)
+}
+
 // ── Fast Loop (every 5s): tactical execution, SL/TP, price refresh ─────────
 
 pub async fn fast_loop(
@@ -164,7 +181,7 @@ pub async fn fast_loop(
                 info!("FastLoop shutdown signal received. Exiting.");
                 break;
             }
-            _ = sleep(Duration::from_secs(5)) => {}
+            _ = sleep(Duration::from_secs(loop_cadence_secs("TREDO_FAST_LOOP_SECS", 5))) => {}
         }
     }
 }
@@ -366,7 +383,7 @@ pub async fn medium_loop(
                 info!("MediumLoop shutdown signal received. Exiting.");
                 break;
             }
-            _ = sleep(Duration::from_secs(30)) => {}
+            _ = sleep(Duration::from_secs(loop_cadence_secs("TREDO_MEDIUM_LOOP_SECS", 30))) => {}
         }
     }
 }
@@ -379,7 +396,8 @@ pub async fn slow_loop(
     mut shutdown_rx: watch::Receiver<bool>,
     _bus: Arc<dyn EventBus>,
 ) {
-    info!("SlowLoop started (24h cadence) — deep reflection + meta-control");
+    let slow_secs = loop_cadence_secs("TREDO_SLOW_LOOP_SECS", 86400);
+    info!(cadence_secs = slow_secs, "SlowLoop started — deep reflection + meta-control (engineering loop)");
 
     loop {
         tokio::select! {
@@ -387,7 +405,7 @@ pub async fn slow_loop(
                 info!("SlowLoop shutdown signal received. Exiting.");
                 break;
             }
-            _ = sleep(Duration::from_secs(86400)) => {
+            _ = sleep(Duration::from_secs(slow_secs)) => {
                 // 0. Rebuild knowledge graph from all closed episodes (GraphRAG)
                 info!("Rebuilding knowledge graph...");
                 state.rebuild_knowledge_graph().await;
